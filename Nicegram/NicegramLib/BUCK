@@ -1,0 +1,19 @@
+load("//Config:buck_rule_macros.bzl", "framework")
+
+framework(
+    name = "NicegramLib",
+    srcs = glob([
+        "Sources/**/*.swift",
+    ]),
+    deps = [
+    	"//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit#shared",
+        "//submodules/BuildConfig:BuildConfig",
+        "//submodules/AppBundle:AppBundle",
+        "//submodules/Postbox:Postbox",
+    	"//submodules/TelegramCore:TelegramCore",
+        "//submodules/SyncCore:SyncCore",
+    ],
+    frameworks = [
+        "$SDKROOT/System/Library/Frameworks/Foundation.framework",
+    ]
+)
