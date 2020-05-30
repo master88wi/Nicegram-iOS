@@ -20,8 +20,25 @@ import Emoji
 import ReactionSelectionNode
 import PersistentStringHash
 import GridMessageSelectionNode
+import OverlayStatusController
 import AppBundle
 import Markdown
+import PresentationDataUtils
+import NicegramLib
+import SettingsUI
+import TelegramCore
+import SwiftSignalKit
+
+
+import NaturalLanguage
+
+@available(iOS 12.0, *)
+func detectedLanguage(for string: String) -> String? {
+    let recognizer = NLLanguageRecognizer()
+    recognizer.processString(string)
+    guard let languageCode = recognizer.dominantLanguage?.rawValue else { return nil }
+    return languageCode
+}
 
 enum InternalBubbleTapAction {
     case action(() -> Void)
@@ -180,6 +197,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
     private var actionButtonsNode: ChatMessageActionButtonsNode?
     
     private var shareButtonNode: HighlightableButtonNode?
+    private var trButtonNode: HighlightableButtonNode?
     
     private let messageAccessibilityArea: AccessibilityAreaNode
 
@@ -389,6 +407,10 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                     return .fail
                 }
                 
+                if let trButtonNode = strongSelf.trButtonNode, trButtonNode.frame.contains(point) {
+                    return .fail
+                }
+                
                 if let avatarNode = strongSelf.accessoryItemNode as? ChatMessageAvatarAccessoryItemNode, avatarNode.frame.contains(point) {
                     return .waitForSingleTap
                 }
@@ -406,11 +428,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                     return .waitForSingleTap
                 }
                 if let forwardInfoNode = strongSelf.forwardInfoNode, forwardInfoNode.frame.contains(point) {
-                    if forwardInfoNode.hasAction(at: strongSelf.view.convert(point, to: forwardInfoNode.view)) {
-                        return .fail
-                    } else {
-                        return .waitForSingleTap
-                    }
+                    return .waitForSingleTap
                 }
                 for contentNode in strongSelf.contentNodes {
                     let tapAction = contentNode.tapActionAtPoint(CGPoint(x: point.x - contentNode.frame.minX, y: point.y - contentNode.frame.minY), gesture: .tap, isEstimating: true)
@@ -709,6 +727,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         let mosaicStatusLayout = ChatMessageDateAndStatusNode.asyncLayout(self.mosaicStatusNode)
         
         let currentShareButtonNode = self.shareButtonNode
+        let currentTrButtonNode = self.trButtonNode
         
         let layoutConstants = self.layoutConstants
         
@@ -730,6 +749,8 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                 actionButtonsLayout: actionButtonsLayout,
                 mosaicStatusLayout: mosaicStatusLayout,
                 currentShareButtonNode: currentShareButtonNode,
+                currentTrButtonNode: currentTrButtonNode,
+                wantTrButton: self.wantTrButton,
                 layoutConstants: layoutConstants,
                 currentItem: currentItem,
                 currentForwardInfo: currentForwardInfo,
@@ -747,6 +768,8 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         actionButtonsLayout: (AccountContext, ChatPresentationThemeData, PresentationChatBubbleCorners, PresentationStrings, ReplyMarkupMessageAttribute, Message, CGFloat) -> (minWidth: CGFloat, layout: (CGFloat) -> (CGSize, (Bool) -> ChatMessageActionButtonsNode)),
         mosaicStatusLayout: (AccountContext, ChatPresentationData, Bool, Int?, String, ChatMessageDateAndStatusType, CGSize, [MessageReaction]) -> (CGSize, (Bool) -> ChatMessageDateAndStatusNode),
         currentShareButtonNode: HighlightableButtonNode?,
+        currentTrButtonNode: HighlightableButtonNode?,
+        wantTrButton: [(Bool, [String])],
         layoutConstants: ChatMessageItemLayoutConstants,
         currentItem: ChatMessageItem?,
         currentForwardInfo: (Peer?, String?)?,
@@ -850,6 +873,41 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         let isFailed = item.content.firstMessage.effectivelyFailed(timestamp: item.context.account.network.getApproximateRemoteTimestamp())
         
         var needShareButton = false
+        var needTrButton = false
+        
+        if !isFailed || Namespaces.Message.allScheduled.contains(item.message.id.namespace) {
+            if wantTrButton[0].0 {
+                if item.message.id.peerId != item.context.account.peerId {
+                    if !item.message.text.isEmpty {
+                        needTrButton = true
+                        if #available(iOS 12.0, *) {
+                            if let msgLang = detectedLanguage(for: item.message.text) {
+                                var lang = item.presentationData.strings.baseLanguageCode
+                                let rawSuffix = "-raw"
+                                if lang.hasSuffix(rawSuffix) {
+                                    lang = String(lang.dropLast(rawSuffix.count))
+                                }
+                                for ignoreLang in wantTrButton[0].1 {
+                                    if ignoreLang.lowercased() == msgLang.lowercased() {
+                                        needTrButton = false
+                                        break
+                                    }
+                                }
+                                if needTrButton {
+                                    // print("Msg Lang \(msgLang.lowercased())")
+                                }
+                            }
+                        } else {
+                            // Fallback on earlier versions
+                        }
+                        if !needTrButton && item.message.text.contains(gTranslateSeparator) {
+                            needTrButton = true
+                        }
+                    }
+                }
+            }
+        }
+        
         if isFailed || Namespaces.Message.allScheduled.contains(item.message.id.namespace) {
             needShareButton = false
         } else if item.message.id.peerId == item.context.account.peerId {
@@ -903,13 +961,19 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         var tmpWidth: CGFloat
         if allowFullWidth {
             tmpWidth = baseWidth
-            if needShareButton {
+            if (needShareButton || needTrButton) {
                 tmpWidth -= 38.0
             }
         } else {
             tmpWidth = layoutConstants.bubble.maximumWidthFill.widthFor(baseWidth)
-            if needShareButton && tmpWidth + 32.0 > baseWidth {
+            if (needShareButton || needTrButton) && tmpWidth + 32.0 > baseWidth {
                 tmpWidth = baseWidth - 32.0
+            }
+        }
+        
+        if needTrButton {
+            if avatarInset != 0.0 {
+                tmpWidth -= 7.0 // Fix reply in chats
             }
         }
         
@@ -1635,6 +1699,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         }
         
         var updatedShareButtonBackground: UIImage?
+        var updatedTrButtonBackground: UIImage?
         
         var updatedShareButtonNode: HighlightableButtonNode?
         if needShareButton {
@@ -1659,6 +1724,25 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                 }
                 buttonNode.setBackgroundImage(buttonIcon, for: [.normal])
                 updatedShareButtonNode = buttonNode
+            }
+        }
+        
+        var updatedTrButtonNode: HighlightableButtonNode?
+        if needTrButton {
+            if currentTrButtonNode != nil {
+                updatedTrButtonNode = currentTrButtonNode
+                if item.presentationData.theme !== currentItem?.presentationData.theme {
+                    let graphics = PresentationResourcesChat.additionalGraphics(item.presentationData.theme.theme, wallpaper: item.presentationData.theme.wallpaper, bubbleCorners: item.presentationData.chatBubbleCorners)
+                    updatedTrButtonBackground = graphics.chatBubbleTrButtonImage
+                }
+            } else {
+                let buttonNode = HighlightableButtonNode()
+                let buttonIcon: UIImage?
+                let graphics = PresentationResourcesChat.additionalGraphics(item.presentationData.theme.theme, wallpaper: item.presentationData.theme.wallpaper, bubbleCorners: item.presentationData.chatBubbleCorners)
+                buttonIcon = graphics.chatBubbleTrButtonImage
+
+                buttonNode.setBackgroundImage(buttonIcon, for: [.normal])
+                updatedTrButtonNode = buttonNode
             }
         }
         
@@ -1715,7 +1799,9 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                 mosaicStatusOrigin: mosaicStatusOrigin,
                 mosaicStatusSizeAndApply: mosaicStatusSizeAndApply,
                 updatedShareButtonNode: updatedShareButtonNode,
-                updatedShareButtonBackground: updatedShareButtonBackground
+                updatedShareButtonBackground: updatedShareButtonBackground,
+                updatedTrButtonNode: updatedTrButtonNode,
+                updatedTrButtonBackground: updatedTrButtonBackground
             )
         })
     }
@@ -1754,7 +1840,9 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         mosaicStatusOrigin: CGPoint?,
         mosaicStatusSizeAndApply: (CGSize, (Bool) -> ChatMessageDateAndStatusNode)?,
         updatedShareButtonNode: HighlightableButtonNode?,
-        updatedShareButtonBackground: UIImage?
+        updatedShareButtonBackground: UIImage?,
+        updatedTrButtonNode: HighlightableButtonNode?,
+        updatedTrButtonBackground: UIImage?
     ) -> Void {
         guard let strongSelf = selfReference.value else {
             return
@@ -2046,14 +2134,43 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
             strongSelf.shareButtonNode = nil
         }
         
+        if let updatedTrButtonNode = updatedTrButtonNode {
+            if updatedTrButtonNode !== strongSelf.trButtonNode {
+                if let trButtonNode = strongSelf.trButtonNode {
+                    trButtonNode.removeFromSupernode()
+                }
+                strongSelf.trButtonNode = updatedTrButtonNode
+                strongSelf.insertSubnode(updatedTrButtonNode, belowSubnode: strongSelf.messageAccessibilityArea)
+                updatedTrButtonNode.addTarget(strongSelf, action: #selector(strongSelf.trButtonPressed), forControlEvents: .touchUpInside)
+            }
+            if let updatedTrButtonBackground = updatedTrButtonBackground {
+                strongSelf.trButtonNode?.setBackgroundImage(updatedTrButtonBackground, for: [.normal])
+            }
+        } else if let trButtonNode = strongSelf.trButtonNode {
+            trButtonNode.removeFromSupernode()
+            strongSelf.trButtonNode = nil
+        }
+        
         if case .System = animation, !strongSelf.contextSourceNode.isExtractedToContextPreview {
             if !strongSelf.backgroundNode.frame.equalTo(backgroundFrame) {
                 strongSelf.backgroundFrameTransition = (strongSelf.backgroundNode.frame, backgroundFrame)
                 strongSelf.enableTransitionClippingNode()
             }
+            var hasShareButton = false
             if let shareButtonNode = strongSelf.shareButtonNode {
+                hasShareButton = true
                 let currentBackgroundFrame = strongSelf.backgroundNode.frame
                 shareButtonNode.frame = CGRect(origin: CGPoint(x: currentBackgroundFrame.maxX + 8.0, y: currentBackgroundFrame.maxY - 30.0), size: CGSize(width: 29.0, height: 29.0))
+            }
+            
+            if let trButtonNode = strongSelf.trButtonNode {
+                let currentBackgroundFrame = strongSelf.backgroundNode.frame
+                
+                var shareButtonSize: CGFloat = 0.0
+                if hasShareButton {
+                    shareButtonSize = 29.0 + 4.0
+                }
+                trButtonNode.frame = CGRect(origin: CGPoint(x: currentBackgroundFrame.maxX + 8.0, y: currentBackgroundFrame.maxY - 30.0 - shareButtonSize), size: CGSize(width: 29.0, height: 29.0))
             }
         } else {
             if let _ = strongSelf.backgroundFrameTransition {
@@ -2061,9 +2178,19 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                 strongSelf.backgroundFrameTransition = nil
             }
             strongSelf.messageAccessibilityArea.frame = backgroundFrame
+            var hasShareButton = false
             if let shareButtonNode = strongSelf.shareButtonNode {
+                hasShareButton = true
                 shareButtonNode.frame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - 30.0), size: CGSize(width: 29.0, height: 29.0))
             }
+            if let trButtonNode = strongSelf.trButtonNode {
+                var shareButtonSize: CGFloat = 0.0
+                if hasShareButton {
+                    shareButtonSize = 29.0 + 4.0
+                }
+                trButtonNode.frame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - 30.0 - shareButtonSize), size: CGSize(width: 29.0, height: 29.0))
+            }
+            
             strongSelf.disableTransitionClippingNode()
             
             if case .System = animation, strongSelf.contextSourceNode.isExtractedToContextPreview {
@@ -2300,8 +2427,18 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
             }
             self.messageAccessibilityArea.frame = backgroundFrame
             
+            var hasShareButton = false
             if let shareButtonNode = self.shareButtonNode {
+                hasShareButton = true
                 shareButtonNode.frame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - 30.0), size: CGSize(width: 29.0, height: 29.0))
+            }
+            
+            if let trButtonNode = self.trButtonNode {
+                var shareButtonSize: CGFloat = 0.0
+                if hasShareButton {
+                    shareButtonSize = 29.0 + 4.0
+                }
+                trButtonNode.frame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - 30.0 - shareButtonSize), size: CGSize(width: 29.0, height: 29.0))
             }
             
             if let transitionClippingNode = self.transitionClippingNode {
@@ -2454,6 +2591,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                         }
                     }
                 }
+                // NG_TODO: Fix code/pre copy
                 if let forwardInfoNode = self.forwardInfoNode, forwardInfoNode.frame.contains(location) {
                     if let item = self.item, let forwardInfo = item.message.forwardInfo {
                         let performAction: () -> Void = {
@@ -2694,6 +2832,10 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         
         if let shareButtonNode = self.shareButtonNode, shareButtonNode.frame.contains(point) {
             return shareButtonNode.view
+        }
+        
+        if let trButtonNode = self.trButtonNode, trButtonNode.frame.contains(point) {
+            return trButtonNode.view
         }
         
         if let selectionNode = self.selectionNode {
@@ -2981,6 +3123,55 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                 }
             } else {
                 item.controllerInteraction.openMessageShareMenu(item.message.id)
+            }
+        }
+    }
+    
+    @objc func trButtonPressed() {
+        if let item = self.item {
+            let context = item.context
+            var message = item.message
+            var presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let locale = presentationData.strings.baseLanguageCode
+            var title = l("Messages.Translate", locale)
+            var mode = "translate"
+            if message.text.contains(gTranslateSeparator) {
+                title = l("Messages.UndoTranslate", locale)
+                mode = "undo-translate"
+            }
+            if mode == "undo-translate" {
+                var newMessageText = message.text
+                if let dotRange = newMessageText.range(of: "\n\n" + gTranslateSeparator) {
+                    newMessageText.removeSubrange(dotRange.lowerBound..<newMessageText.endIndex)
+                }
+                let _ = (context.account.postbox.transaction { transaction -> Void in
+                    transaction.updateMessage(message.id, update: { currentMessage in
+                        var storeForwardInfo: StoreMessageForwardInfo?
+                        if let forwardInfo = currentMessage.forwardInfo {
+                            storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType)
+                        }
+                        
+                        return .update(StoreMessage(id: currentMessage.id, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: newMessageText, attributes: currentMessage.attributes, media: currentMessage.media))
+                    })
+                }).start()
+            } else {
+                let _ = (gtranslate(message.text, presentationData.strings.baseLanguageCode)  |> deliverOnMainQueue).start(next: { translated in
+                    let newMessageText = message.text + "\n\n\(gTranslateSeparator)\n" + translated
+                    let _ = (context.account.postbox.transaction { transaction -> Void in
+                        transaction.updateMessage(message.id, update: { currentMessage in
+                            var storeForwardInfo: StoreMessageForwardInfo?
+                            if let forwardInfo = currentMessage.forwardInfo {
+                                storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType)
+                            }
+
+                            return .update(StoreMessage(id: currentMessage.id, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: newMessageText, attributes: currentMessage.attributes, media: currentMessage.media))
+                        })
+                    }).start()
+                }, error: {_ in
+                    print("error translating")
+                    let c = getIAPErrorController(context: context, "Messages.TranslateError", presentationData)
+                    self.item?.controllerInteraction.presentController(c, nil)
+                })
             }
         }
     }
