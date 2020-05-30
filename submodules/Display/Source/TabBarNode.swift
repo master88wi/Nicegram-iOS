@@ -328,6 +328,7 @@ class TabBarNode: ASDisplayNode {
     private var theme: TabBarControllerTheme
     private var validLayout: (CGSize, CGFloat, CGFloat, CGFloat)?
     private var horizontal: Bool = false
+    public var showTabNames: Bool
     private var centered: Bool = false
     
     private var badgeImage: UIImage
@@ -337,11 +338,12 @@ class TabBarNode: ASDisplayNode {
     
     private var tapRecognizer: TapLongTapOrDoubleTapGestureRecognizer?
     
-    init(theme: TabBarControllerTheme, itemSelected: @escaping (Int, Bool, [ASDisplayNode]) -> Void, contextAction: @escaping (Int, ContextExtractedContentContainingNode, ContextGesture) -> Void, swipeAction: @escaping (Int, TabBarItemSwipeDirection) -> Void) {
+    init(theme: TabBarControllerTheme, itemSelected: @escaping (Int, Bool, [ASDisplayNode]) -> Void, contextAction: @escaping (Int, ContextExtractedContentContainingNode, ContextGesture) -> Void, swipeAction: @escaping (Int, TabBarItemSwipeDirection) -> Void, showTabNames: Bool = true) {
         self.itemSelected = itemSelected
         self.contextAction = contextAction
         self.swipeAction = swipeAction
         self.theme = theme
+        self.showTabNames = showTabNames
         
         self.separatorNode = ASDisplayNode()
         self.separatorNode.backgroundColor = theme.tabBarSeparatorColor
@@ -565,16 +567,13 @@ class TabBarNode: ASDisplayNode {
                 let horizontalHitTestInset = distanceBetweenNodes / 2.0 - nodeSize.width / 2.0
                 let nodeFrame = CGRect(origin: CGPoint(x: originX, y: 3.0), size: nodeSize)
                 transition.updateFrame(node: node, frame: nodeFrame)
-                node.extractedContainerNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
-                node.extractedContainerNode.contentNode.frame = node.extractedContainerNode.bounds
-                node.extractedContainerNode.contentRect = node.extractedContainerNode.bounds
-                node.containerNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
-                node.hitTestSlop = UIEdgeInsets(top: -3.0, left: -horizontalHitTestInset, bottom: -3.0, right: -horizontalHitTestInset)
-                node.containerNode.hitTestSlop = UIEdgeInsets(top: -3.0, left: -horizontalHitTestInset, bottom: -3.0, right: -horizontalHitTestInset)
-                node.imageNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
-                node.textImageNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
-                node.contextImageNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
-                node.contextTextImageNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
+                if self.showTabNames {
+                    node.imageNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
+                    node.textImageNode.frame = CGRect(origin: CGPoint(), size: nodeFrame.size)
+                } else {
+                    node.imageNode.frame = CGRect(origin: CGPoint(x: 0.0, y: 6.0), size: nodeFrame.size)
+                    node.textImageNode.frame = CGRect(origin: CGPoint(), size: CGSize())
+                }
                 
                 if container.badgeValue != container.appliedBadgeValue {
                     container.appliedBadgeValue = container.badgeValue
