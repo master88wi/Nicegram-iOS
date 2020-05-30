@@ -23,6 +23,8 @@ framework(
         "Sources/**/*.swift",
     ]),
     deps = [
+        "//Nicegram/NicegramLib:NicegramLib",
+        #"//Nicegram/NicegramUI:NicegramUI",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit#shared",
         "//submodules/SSignalKit/SSignalKit:SSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit#shared",
