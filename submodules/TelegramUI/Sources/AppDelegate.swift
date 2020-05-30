@@ -39,6 +39,7 @@ import PresentationDataUtils
 import TelegramIntents
 import AccountUtils
 import CoreSpotlight
+import NicegramLib
 
 #if canImport(BackgroundTasks)
 import BackgroundTasks
@@ -1102,9 +1103,23 @@ final class SharedApplicationContext {
         |> deliverOnMainQueue).start(next: { context in
             print("Application: context took \(CFAbsoluteTimeGetCurrent() - startTime) to become available")
             
+            Queue().async {
+                updateGlobalNGSettings()
+            }
+            
             var network: Network?
             if let context = context {
                 network = context.context.account.network
+                let presentationData = context.context.sharedContext.currentPresentationData.with({ $0 })
+                Queue().async {
+                    updateNGInfo(userId: context.context.account.peerId.toInt64())
+                    #if !DEBUG
+                    downloadLocale(presentationData.strings.baseLanguageCode)
+                    #endif
+                    if (isPremium()) {
+                        validatePremium(isPremium())
+                    }
+                }
             }
             
             Logger.shared.log("App \(self.episodeId)", "received context \(String(describing: context)) account \(String(describing: context?.context.account.id)) network \(String(describing: network))")

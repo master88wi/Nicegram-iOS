@@ -12,6 +12,7 @@ import TextFormat
 import AccountContext
 import TelegramNotices
 import ReactionSelectionNode
+import NicegramLib
 
 private final class ChatControllerNodeView: UITracingLayerView, WindowInputAccessoryHeightProvider, PreviewingHostView {
     var inputAccessoryHeight: (() -> CGFloat)?
@@ -1543,6 +1544,18 @@ class ChatControllerNode: ASDisplayNode, UIScrollViewDelegate {
                     restrictionText = chatPresentationInterfaceState.strings.Channel_ErrorAccessDenied
                 } else {
                     restrictionText = chatPresentationInterfaceState.strings.Group_ErrorAccessDenied
+                }
+            }
+            
+            if (restrictionText != chatPresentationInterfaceState.strings.Channel_ErrorAccessDenied || restrictionText != chatPresentationInterfaceState.strings.Group_ErrorAccessDenied) {
+                if (isAllowedChat(peer: chatPresentationInterfaceState.renderedPeer?.peer, contentSettings: context.currentContentSettings.with { $0 })) {
+                    restrictionText = nil
+                }
+            }
+            
+            if restrictionText == nil {
+                if isNGForceBlocked(chatPresentationInterfaceState.renderedPeer?.peer) {
+                    restrictionText = l("NGWeb.Blocked", chatPresentationInterfaceState.strings.baseLanguageCode)
                 }
             }
             

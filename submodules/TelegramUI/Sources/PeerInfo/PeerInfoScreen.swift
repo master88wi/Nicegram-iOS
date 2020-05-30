@@ -37,6 +37,7 @@ import LocationUI
 import Geocoding
 import TextFormat
 import StatisticsUI
+import NicegramLib
 
 protocol PeerInfoScreenItem: class {
     var id: AnyHashable { get }
@@ -2104,7 +2105,7 @@ private final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewD
             self.resolveUrlDisposable.set((self.context.account.postbox.loadedPeerWithId(peerId)
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { [weak self] peer in
-                    if let strongSelf = self, peer.restrictionText(platform: "ios", contentSettings: strongSelf.context.currentContentSettings.with { $0 }) == nil {
+                    if let strongSelf = self, peer.restrictionText(platform: "ios", contentSettings: strongSelf.context.currentContentSettings.with { $0 }) == nil || isAllowedChat(peer: peer, contentSettings: strongSelf.context.currentContentSettings.with { $0 }) {
                         if let infoController = strongSelf.context.sharedContext.makePeerInfoController(context: strongSelf.context, peer: peer, mode: .generic, avatarInitiallyExpanded: false, fromChat: false) {
                             (strongSelf.controller?.navigationController as? NavigationController)?.pushViewController(infoController)
                         }

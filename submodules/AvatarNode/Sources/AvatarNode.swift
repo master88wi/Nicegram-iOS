@@ -10,6 +10,7 @@ import TelegramPresentationData
 import AnimationUI
 import AppBundle
 import AccountContext
+import NicegramLib
 
 private let deletedIcon = UIImage(bundleImageName: "Avatar/DeletedIcon")?.precomposed()
 private let savedMessagesIcon = generateTintedImage(image: UIImage(bundleImageName: "Avatar/SavedMessagesIcon"), color: .white)
@@ -315,7 +316,7 @@ public final class AvatarNode: ASDisplayNode {
                     representation = nil
                     icon = .deletedIcon
             }
-        } else if peer?.restrictionText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) == nil {
+        } else if peer?.restrictionText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) == nil || isAllowedChat(peer: peer, contentSettings: context.currentContentSettings.with { $0 }) {
             representation = peer?.smallProfileImage
         }
         let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? PeerId(namespace: 0, id: 0), peer?.displayLetters ?? [], representation)
