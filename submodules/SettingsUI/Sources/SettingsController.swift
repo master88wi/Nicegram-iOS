@@ -38,6 +38,8 @@ import WalletUI
 import PhoneNumberFormat
 import AccountUtils
 import AuthTransferUI
+//import NicegramUI
+import NicegramLib
 
 private let avatarFont = avatarPlaceholderFont(size: 13.0)
 
@@ -86,7 +88,7 @@ private final class SettingsItemArguments {
     let avatarAndNameInfoContext: ItemListAvatarAndNameInfoItemContext
     
     let avatarTapAction: () -> Void
-    
+    let openNgController: (String) -> Void
     let changeProfilePhoto: () -> Void
     let openUsername: () -> Void
     let openProxy: () -> Void
@@ -121,7 +123,7 @@ private final class SettingsItemArguments {
         avatarAndNameInfoContext: ItemListAvatarAndNameInfoItemContext,
     
         avatarTapAction: @escaping () -> Void,
-    
+        openNgController: @escaping (String) -> Void,
         changeProfilePhoto: @escaping () -> Void,
         openUsername: @escaping () -> Void,
         openProxy: @escaping () -> Void,
@@ -155,7 +157,7 @@ private final class SettingsItemArguments {
         self.avatarAndNameInfoContext = avatarAndNameInfoContext
         
         self.avatarTapAction = avatarTapAction
-        
+        self.openNgController = openNgController
         self.changeProfilePhoto = changeProfilePhoto
         self.openUsername = openUsername
         self.openProxy = openProxy
@@ -192,6 +194,7 @@ private enum SettingsSection: Int32 {
     case phone
     case accounts
     case proxy
+    case nicegram
     case media
     case generalSettings
     case advanced
@@ -199,6 +202,8 @@ private enum SettingsSection: Int32 {
 }
 
 private indirect enum SettingsEntry: ItemListNodeEntry {
+    case nicegram(PresentationTheme, UIImage?, String)
+    case premium(PresentationTheme, UIImage?, String)
     case userInfo(Account, PresentationTheme, PresentationStrings, PresentationDateTimeFormat, Peer?, CachedPeerData?, ItemListAvatarAndNameInfoItemState, ItemListAvatarAndNameInfoItemUpdatingAvatar?)
     case setProfilePhoto(PresentationTheme, String)
     case setUsername(PresentationTheme, String)
@@ -245,6 +250,8 @@ private indirect enum SettingsEntry: ItemListNodeEntry {
             return SettingsSection.accounts.rawValue
         case .proxy:
             return SettingsSection.proxy.rawValue
+        case .nicegram, .premium:
+            return SettingsSection.nicegram.rawValue
         case .devices, .filters:
             return SettingsSection.media.rawValue
         case .savedMessages, .recentCalls, .stickers:
@@ -282,40 +289,44 @@ private indirect enum SettingsEntry: ItemListNodeEntry {
             return 1002
         case .proxy:
             return 1003
-        case .savedMessages:
+        case .premium:
             return 1004
-        case .recentCalls:
+        case .nicegram:
             return 1005
-        case .stickers:
+        case .savedMessages:
             return 1006
-        case .devices:
+        case .recentCalls:
             return 1007
-        case .filters:
+        case .stickers:
             return 1008
-        case .notificationsAndSounds:
+        case .devices:
             return 1009
-        case .privacyAndSecurity:
+        case .filters:
             return 1010
-        case .dataAndStorage:
+        case .notificationsAndSounds:
             return 1011
-        case .themes:
+        case .privacyAndSecurity:
             return 1012
-        case .language:
+        case .dataAndStorage:
             return 1013
-        case .contentStickers:
+        case .themes:
             return 1014
+        case .language:
+            return 1015
+        case .contentStickers:
+            return 1016
         #if ENABLE_WALLET
         case .wallet:
-            return 1015
+            return 1017
         #endif
         case .passport:
-            return 1016
-        case .watch:
-            return 1017
-        case .askAQuestion:
             return 1018
-        case .faq:
+        case .watch:
             return 1019
+        case .askAQuestion:
+            return 1020
+        case .faq:
+            return 1021
         }
     }
     
@@ -403,6 +414,18 @@ private indirect enum SettingsEntry: ItemListNodeEntry {
                 }
             case let .proxy(lhsTheme, lhsImage, lhsText, lhsValue):
                 if case let .proxy(rhsTheme, rhsImage, rhsText, rhsValue) = rhs, lhsTheme === rhsTheme, lhsImage === rhsImage, lhsText == rhsText, lhsValue == rhsValue {
+                    return true
+                } else {
+                    return false
+                }
+            case let .nicegram(lhsTheme, lhsImage, lhsText):
+                if case let .nicegram(rhsTheme, rhsImage, rhsText) = rhs, lhsTheme === rhsTheme, lhsImage === rhsImage, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .premium(lhsTheme, lhsImage, lhsText):
+                if case let .premium(rhsTheme, rhsImage, rhsText) = rhs, lhsTheme === rhsTheme, lhsImage === rhsImage, lhsText == rhsText {
                     return true
                 } else {
                     return false
@@ -515,6 +538,14 @@ private indirect enum SettingsEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! SettingsItemArguments
         switch self {
+            case let .nicegram(theme, image, text):
+                return ItemListDisclosureItem(presentationData: presentationData, icon: image, title: text, label: "", sectionId: ItemListSectionId(self.section), style: .blocks, action: {
+                    arguments.openNgController("settings")
+                })
+            case let .premium(theme, image, text):
+                return ItemListDisclosureItem(presentationData: presentationData, icon: image, title: text, label: "", sectionId: ItemListSectionId(self.section), style: .blocks, action: {
+                    arguments.openNgController("premium")
+                })
             case let .userInfo(account, theme, strings, dateTimeFormat, peer, cachedData, state, updatingImage):
                 return ItemListAvatarAndNameInfoItem(accountContext: arguments.sharedContext.makeTempAccountContext(account: account), presentationData: presentationData, dateTimeFormat: dateTimeFormat, mode: .settings, peer: peer, presence: TelegramUserPresence(status: .present(until: Int32.max), lastActivity: 0), cachedData: cachedData, state: state, sectionId: ItemListSectionId(self.section), style: .blocks(withTopInset: false, withExtendedBottomInset: false), editingNameUpdated: { _ in
                 }, avatarTapped: {
@@ -697,6 +728,8 @@ private func settingsEntries(account: Account, presentationData: PresentationDat
             }
             entries.append(.proxy(presentationData.theme, PresentationResourcesSettings.proxy, presentationData.strings.Settings_Proxy, valueString))
         }
+        entries.append(.premium(presentationData.theme, PresentationResourcesSettings.premium, l("Premium.Title", presentationData.strings.baseLanguageCode)))
+        entries.append(.nicegram(presentationData.theme, PresentationResourcesSettings.nicegram, l("AppName", presentationData.strings.baseLanguageCode)))
         
         entries.append(.savedMessages(presentationData.theme, PresentationResourcesSettings.savedMessages, presentationData.strings.Settings_SavedMessages))
         entries.append(.recentCalls(presentationData.theme, PresentationResourcesSettings.recentCalls, presentationData.strings.CallSettings_RecentCalls))
@@ -904,6 +937,7 @@ public func settingsController(context: AccountContext, accountManager: AccountM
         statePromise.set(stateValue.modify { f($0) })
     }
     
+    var replaceTopControllerImpl: ((ViewController) -> Void)?
     var pushControllerImpl: ((ViewController) -> Void)?
     var presentControllerImpl: ((ViewController, Any?) -> Void)?
     var presentInGlobalOverlayImpl: ((ViewController, Any?) -> Void)?
@@ -1034,6 +1068,82 @@ public func settingsController(context: AccountContext, accountManager: AccountM
                     changeProfilePhotoImpl?()
                 }
             })
+        })
+    }, openNgController: { arg in
+        let _ = (contextValue.get()
+        |> deliverOnMainQueue
+        |> take(1)).start(next: { context in
+            switch (arg) {
+                case "nicegram":
+                    pushControllerImpl?(nicegramSettingsController(context: context))
+                    break
+                case "premium":
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    
+                    if isPremium() {
+                        if (isPremium()) {
+                            pushControllerImpl?(premiumController(context: context))
+                            return
+                        } else {
+                            let alertController = getIAPErrorController(context: context, "IAP.Common.ValidateError", presentationData)
+                            presentControllerImpl?(alertController, nil)
+                            return
+                        }
+                    }
+                    
+                    NicegramProducts.store.requestProducts{ success, products in
+                        Queue.mainQueue().async {
+                        if success {
+                            if let products = products {
+                                for product in products {
+                                    if product.productIdentifier == NicegramProducts.Premium {
+                                        let premiumIntroController = getPremiumIntroController(context: context, presentationData: presentationData, product: product)
+                                        
+                                        let canPay = IAPHelper.canMakePayments()
+                                        
+                                        if !isPremium() {
+                                            premiumIntroController.proceed = { result in
+                                                if canPay {
+                                                    let observer = NotificationCenter.default.addObserver(forName: .IAPHelperPurchaseNotification, object: nil, queue: .main, using: {  notification in
+                                                        let productID = notification.object as? String
+                                                        if productID == NicegramProducts.Premium {
+                                                            NGSettings.premium = true
+                                                            validatePremium(isPremium(), forceValid: true)
+                                                            
+                                                            if (isPremium()) {
+                                                                replaceTopControllerImpl?(premiumController(context: context))
+                                                            } else {
+                                                                let alertController = getIAPErrorController(context: context, "IAP.Common.ValidateError", presentationData)
+                                                                premiumIntroController.present(alertController, in: .window(.root))
+                                                            }
+                                                        }
+                                                    })
+                                                    NicegramProducts.store.buyProduct(product)
+                                                } else {
+                                                    let alertController = textAlertController(context: context, title: nil, text: l("IAP.Common.CantPay", presentationData.strings.baseLanguageCode), actions: [
+                                                        TextAlertAction(type: .genericAction, title: presentationData.strings.Common_OK, action: {
+                                                        })])
+                                                    premiumIntroController.present(alertController, in: .window(.root))
+                                                }
+                                            }
+                                            pushControllerImpl?(premiumIntroController)
+                                        } else {
+                                            pushControllerImpl?(premiumController(context: context))
+                                        }
+                                        return
+                                    }
+                                }
+                                 presentControllerImpl?(getIAPErrorController(context: context, "IAP.Common.ErrorFetch", presentationData), nil)
+                            }
+                        } else {
+                            presentControllerImpl?(getIAPErrorController(context: context, "IAP.Common.ErrorFetch", presentationData), nil)
+                        }
+                    
+                    }
+                }
+                default:
+                    pushControllerImpl?(nicegramSettingsController(context: context))
+            }
         })
     }, changeProfilePhoto: {
         changeProfilePhotoImpl?()
@@ -1926,6 +2036,13 @@ public func settingsController(context: AccountContext, accountManager: AccountM
     setDisplayNavigationBarImpl = { [weak controller] display in
         controller?.setDisplayNavigationBar(display, transition: .animated(duration: 0.5, curve: .spring))
     }
+    
+    replaceTopControllerImpl = { [weak controller] c in
+        if let controller = controller {
+            (controller.navigationController as? NavigationController)?.replaceTopController(c, animated: true)
+        }
+    }
+    
     return controller
 }
 
