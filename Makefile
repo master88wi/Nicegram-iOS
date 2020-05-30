@@ -9,6 +9,12 @@ CORE_COUNT_MINUS_ONE=$(shell expr ${CORE_COUNT} \- 1)
 
 BUCK_OPTIONS=\
 	--config custom.appVersion="${APP_VERSION}" \
+	--config custom.appName="${APP_NAME}" \
+	--config custom.productName="${PRODUCT_NAME}" \
+	--config custom.apiUrl="${NG_API_URL}" \
+	--config custom.valUrl="${VALIDATOR_URL}" \
+	--config custom.lab="${NG_LAB_DATA}" \
+	--config custom.pbundle="${PREMIUM_BUNDLE}" \
 	--config custom.developmentCodeSignIdentity="${DEVELOPMENT_CODE_SIGN_IDENTITY}" \
 	--config custom.distributionCodeSignIdentity="${DISTRIBUTION_CODE_SIGN_IDENTITY}" \
 	--config custom.developmentTeam="${DEVELOPMENT_TEAM}" \

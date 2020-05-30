@@ -185,6 +185,23 @@ API_AVAILABLE(ios(10))
     return @(APP_SPECIFIC_URL_SCHEME);
 }
 
+- (NSString *)ngApiUrl {
+    return @(NG_API_URL);
+}
+
+- (NSString *)ngLabData {
+    return @(NG_LAB);
+}
+
+
+- (NSString *)validatorUrl {
+    return @(VALIDATOR_URL);
+}
+
+- (NSString *)premiumBundle {
+    return @(PREMIUM_BUNDLE);
+}
+
 + (NSString * _Nullable)bundleSeedId {
     NSDictionary *query = [NSDictionary dictionaryWithObjectsAndKeys:
        (__bridge NSString *)kSecClassGenericPassword, (__bridge NSString *)kSecClass,
