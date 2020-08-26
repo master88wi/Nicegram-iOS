@@ -15,6 +15,9 @@ import WalletCore
 import WalletUI
 #endif
 import PhoneNumberFormat
+import TelegramUIPreferences
+import TelegramVoip
+import TelegramCallsUI
 
 private final class DeviceSpecificContactImportContext {
     let disposable = MetaDisposable()
@@ -138,14 +141,23 @@ public final class AccountContextImpl: AccountContext {
         return self._contentSettings.get()
     }
     
+    public var currentAppConfiguration: Atomic<AppConfiguration>
+    private let _appConfiguration = Promise<AppConfiguration>()
+    public var appConfiguration: Signal<AppConfiguration, NoError> {
+        return self._appConfiguration.get()
+    }
+    
     public var watchManager: WatchManager?
     
     private var storedPassword: (String, CFAbsoluteTime, SwiftSignalKit.Timer)?
     private var limitsConfigurationDisposable: Disposable?
     private var contentSettingsDisposable: Disposable?
+    private var appConfigurationDisposable: Disposable?
     
     private let deviceSpecificContactImportContexts: QueueLocalObject<DeviceSpecificContactImportContexts>
     private var managedAppSpecificContactsDisposable: Disposable?
+    
+    private var experimentalUISettingsDisposable: Disposable?
     
     #if ENABLE_WALLET
     public var hasWallets: Signal<Bool, NoError> {
@@ -172,7 +184,7 @@ public final class AccountContextImpl: AccountContext {
     }
     #endif
     
-    public init(sharedContext: SharedAccountContextImpl, account: Account, /*tonContext: StoredTonContext?, */limitsConfiguration: LimitsConfiguration, contentSettings: ContentSettings, temp: Bool = false)
+    public init(sharedContext: SharedAccountContextImpl, account: Account, /*tonContext: StoredTonContext?, */limitsConfiguration: LimitsConfiguration, contentSettings: ContentSettings, appConfiguration: AppConfiguration, temp: Bool = false)
     {
         self.sharedContextImpl = sharedContext
         self.account = account
@@ -199,7 +211,7 @@ public final class AccountContextImpl: AccountContext {
         }
         
         if let locationManager = self.sharedContextImpl.locationManager, sharedContext.applicationBindings.isMainApp && !temp {
-            self.peersNearbyManager = PeersNearbyManagerImpl(account: account, locationManager: locationManager)
+            self.peersNearbyManager = PeersNearbyManagerImpl(account: account, locationManager: locationManager, inForeground: sharedContext.applicationBindings.applicationInForeground)
         } else {
             self.peersNearbyManager = nil
         }
@@ -228,6 +240,16 @@ public final class AccountContextImpl: AccountContext {
             let _ = currentContentSettings.swap(value)
         })
         
+        let updatedAppConfiguration = getAppConfiguration(postbox: account.postbox)
+        self.currentAppConfiguration = Atomic(value: appConfiguration)
+        self._appConfiguration.set(.single(appConfiguration) |> then(updatedAppConfiguration))
+        
+        let currentAppConfiguration = self.currentAppConfiguration
+        self.appConfigurationDisposable = (self._appConfiguration.get()
+        |> deliverOnMainQueue).start(next: { value in
+            let _ = currentAppConfiguration.swap(value)
+        })
+        
         let queue = Queue()
         self.deviceSpecificContactImportContexts = QueueLocalObject(queue: queue, generate: {
             return DeviceSpecificContactImportContexts(queue: queue)
@@ -242,12 +264,18 @@ public final class AccountContextImpl: AccountContext {
                 }
             })
         }
+        
+        account.callSessionManager.updateVersions(versions: PresentationCallManagerImpl.voipVersions(includeExperimental: true, includeReference: false).map { version, supportsVideo -> CallSessionManagerImplementationVersion in
+            CallSessionManagerImplementationVersion(version: version, supportsVideo: supportsVideo)
+        })
     }
     
     deinit {
         self.limitsConfigurationDisposable?.dispose()
         self.managedAppSpecificContactsDisposable?.dispose()
         self.contentSettingsDisposable?.dispose()
+        self.appConfigurationDisposable?.dispose()
+        self.experimentalUISettingsDisposable?.dispose()
     }
     
     public func storeSecureIdPassword(password: String) {
@@ -270,4 +298,18 @@ public final class AccountContextImpl: AccountContext {
             return nil
         }
     }
+}
+
+func getAppConfiguration(transaction: Transaction) -> AppConfiguration {
+    let appConfiguration: AppConfiguration = transaction.getPreferencesEntry(key: PreferencesKeys.appConfiguration) as? AppConfiguration ?? AppConfiguration.defaultValue
+    return appConfiguration
+}
+
+func getAppConfiguration(postbox: Postbox) -> Signal<AppConfiguration, NoError> {
+    return postbox.preferencesView(keys: [PreferencesKeys.appConfiguration])
+    |> map { view -> AppConfiguration in
+        let appConfiguration: AppConfiguration = view.values[PreferencesKeys.appConfiguration] as? AppConfiguration ?? AppConfiguration.defaultValue
+        return appConfiguration
+    }
+    |> distinctUntilChanged
 }

@@ -40,6 +40,8 @@ import AccountUtils
 import AuthTransferUI
 //import NicegramUI
 import NicegramLib
+import Emoji
+import LegacyMediaPickerUI
 
 private let avatarFont = avatarPlaceholderFont(size: 13.0)
 
@@ -690,7 +692,7 @@ private func settingsEntries(account: Account, presentationData: PresentationDat
         let userInfoState = ItemListAvatarAndNameInfoItemState(editingName: nil, updatingName: nil)
         entries.append(.userInfo(account, presentationData.theme, presentationData.strings, presentationData.dateTimeFormat, peer, view.cachedData, userInfoState, state.updatingAvatar))
         if peer.photo.isEmpty {
-            entries.append(.setProfilePhoto(presentationData.theme, presentationData.strings.Settings_SetProfilePhoto))
+            entries.append(.setProfilePhoto(presentationData.theme, presentationData.strings.Settings_SetProfilePhotoOrVideo))
         }
         if peer.addressName == nil {
             entries.append(.setUsername(presentationData.theme, presentationData.strings.Settings_SetUsername))
@@ -822,21 +824,6 @@ private final class SettingsControllerImpl: ItemListController, SettingsControll
         //self.contextValue.set(.single(context))
     }
     
-    /*func presentTabBarPreviewingController(sourceNodes: [ASDisplayNode]) {
-        guard let (maybePrimary, other) = self.accountsAndPeersValue, let primary = maybePrimary else {
-            return
-        }
-        let controller = TabBarAccountSwitchController(sharedContext: self.sharedContext, accounts: (primary, other), canAddAccounts: other.count + 1 < maximumNumberOfAccounts, switchToAccount: { [weak self] id in
-            self?.switchToAccount?(id)
-        }, addAccount: { [weak self] in
-            self?.addAccount?()
-        }, sourceNodes: sourceNodes)
-        self.sharedContext.mainWindow?.present(controller, on: .root)
-    }
-    
-    func updateTabBarPreviewingControllerPresentation(_ update: TabBarContainedControllerPresentationUpdate) {
-    }*/
-    
     override public func tabBarItemContextAction(sourceNode: ContextExtractedContentContainingNode, gesture: ContextGesture) {
         guard let (maybePrimary, other) = self.accountsAndPeersValue, let primary = maybePrimary else {
             return
@@ -867,7 +854,10 @@ private final class SettingsControllerImpl: ItemListController, SettingsControll
                 }
             } else {
                 let peerId = peer.id
-                let displayLetters = peer.displayLetters
+                var displayLetters = peer.displayLetters
+                if displayLetters.count == 2 && displayLetters[0].isSingleEmoji && displayLetters[1].isSingleEmoji {
+                    displayLetters = [displayLetters[0]]
+                }
                 iconSignal = Signal { subscriber in
                     let image = generateImage(size, rotatedContext: { size, context in
                         context.clear(CGRect(origin: CGPoint(), size: size))
@@ -1038,6 +1028,119 @@ public func settingsController(context: AccountContext, accountManager: AccountM
     let blockedPeers = Promise<BlockedPeersContext?>(nil)
     let hasTwoStepAuthPromise = Promise<Bool?>(nil)
     
+    let completedProfilePhotoImpl: (UIImage) -> Void = { image in
+        if let data = image.jpegData(compressionQuality: 0.6) {
+            let resource = LocalFileMediaResource(fileId: arc4random64())
+            context.account.postbox.mediaBox.storeResourceData(resource.id, data: data)
+            let representation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: 640, height: 640), resource: resource, progressiveSizes: [])
+            updateState { state in
+                var state = state
+                state.updatingAvatar = .image(representation, true)
+                return state
+            }
+            updateAvatarDisposable.set((updateAccountPhoto(account: context.account, resource: resource, videoResource: nil, videoStartTimestamp: nil, mapResourceToAvatarSizes: { resource, representations in
+                return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource, representations: representations)
+            }) |> deliverOnMainQueue).start(next: { result in
+                switch result {
+                case .complete:
+                    updateState { state in
+                        var state = state
+                        state.updatingAvatar = nil
+                        return state
+                    }
+                case .progress:
+                    break
+                }
+            }))
+        }
+    }
+    
+    let completedProfileVideoImpl: (UIImage, URL, TGVideoEditAdjustments?) -> Void = { image, url, adjustments in
+        if let data = image.jpegData(compressionQuality: 0.6) {
+            let photoResource = LocalFileMediaResource(fileId: arc4random64())
+            context.account.postbox.mediaBox.storeResourceData(photoResource.id, data: data)
+            let representation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: 640, height: 640), resource: photoResource, progressiveSizes: [])
+            updateState { state in
+                var state = state
+                state.updatingAvatar = .image(representation, true)
+                return state
+            }
+            
+            var videoStartTimestamp: Double? = nil
+            if let adjustments = adjustments, adjustments.videoStartValue > 0.0 {
+                videoStartTimestamp = adjustments.videoStartValue - adjustments.trimStartValue
+            }
+            
+            let signal = Signal<TelegramMediaResource, UploadPeerPhotoError> { subscriber in
+                var filteredPath = url.path
+                if filteredPath.hasPrefix("file://") {
+                    filteredPath = String(filteredPath[filteredPath.index(filteredPath.startIndex, offsetBy: "file://".count)])
+                }
+                
+                let avAsset = AVURLAsset(url: URL(fileURLWithPath: filteredPath))
+                let entityRenderer: LegacyPaintEntityRenderer? = adjustments.flatMap { adjustments in
+                    if let paintingData = adjustments.paintingData, paintingData.hasAnimation {
+                        return LegacyPaintEntityRenderer(account: context.account, adjustments: adjustments)
+                    } else {
+                        return nil
+                    }
+                }
+                let uploadInterface = LegacyLiveUploadInterface(account: context.account)
+                let signal = TGMediaVideoConverter.convert(avAsset, adjustments: adjustments, watcher: uploadInterface, entityRenderer: entityRenderer)!
+                
+                let signalDisposable = signal.start(next: { next in
+                    if let result = next as? TGMediaVideoConversionResult {
+                        if let image = result.coverImage, let data = image.jpegData(compressionQuality: 0.7) {
+                            context.account.postbox.mediaBox.storeResourceData(photoResource.id, data: data)
+                        }
+                        
+                        var value = stat()
+                        if stat(result.fileURL.path, &value) == 0 {
+                            if let data = try? Data(contentsOf: result.fileURL) {
+                                let resource: TelegramMediaResource
+                                if let liveUploadData = result.liveUploadData as? LegacyLiveUploadInterfaceResult {
+                                    resource = LocalFileMediaResource(fileId: liveUploadData.id)
+                                } else {
+                                    resource = LocalFileMediaResource(fileId: arc4random64())
+                                }
+                                context.account.postbox.mediaBox.storeResourceData(resource.id, data: data, synchronous: true)
+                                subscriber.putNext(resource)
+                            }
+                        }
+                        subscriber.putCompletion()
+                    }
+                }, error: { _ in
+                }, completed: nil)
+                
+                let disposable = ActionDisposable {
+                    signalDisposable?.dispose()
+                }
+                
+                return ActionDisposable {
+                    disposable.dispose()
+                }
+            }
+                                    
+            updateAvatarDisposable.set((signal
+            |> mapToSignal { videoResource in
+                return updateAccountPhoto(account: context.account, resource: photoResource, videoResource: videoResource, videoStartTimestamp: videoStartTimestamp, mapResourceToAvatarSizes: { resource, representations in
+                    return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource, representations: representations)
+                })
+            } |> deliverOnMainQueue).start(next: { result in
+                switch result {
+                    case .complete:
+                        updateState { state in
+                            var state = state
+                            state.updatingAvatar = nil
+                            return state
+                        }
+                    case .progress:
+                        break
+                }
+            }))
+        }
+    }
+    
     let arguments = SettingsItemArguments(sharedContext: context.sharedContext, avatarAndNameInfoContext: avatarAndNameInfoContext, avatarTapAction: {
         var updating = false
         updateState {
@@ -1057,8 +1160,14 @@ public func settingsController(context: AccountContext, accountManager: AccountM
                     let galleryController = AvatarGalleryController(context: context, peer: peer, replaceRootController: { controller, ready in
                         
                     })
+                    galleryController.avatarPhotoEditCompletion = { image in
+                        completedProfilePhotoImpl(image)
+                    }
+                    galleryController.avatarVideoEditCompletion = { image, url, adjustments in
+                        completedProfileVideoImpl(image, url, adjustments)
+                    }
                     hiddenAvatarRepresentationDisposable.set((galleryController.hiddenMedia |> deliverOnMainQueue).start(next: { entry in
-                        avatarAndNameInfoContext.hiddenAvatarRepresentation = entry?.representations.first?.representation
+                        avatarAndNameInfoContext.hiddenAvatarRepresentation = entry?.representations.last?.representation
                         updateHiddenAvatarImpl?()
                     }))
                     presentControllerImpl?(galleryController, AvatarGalleryControllerPresentationArguments(transitionArguments: { entry in
@@ -1181,7 +1290,7 @@ public func settingsController(context: AccountContext, accountManager: AccountM
                     blockedPeers.set(.single(blockedPeersContext))
                 }, updatedHasTwoStepAuth: { hasTwoStepAuthValue in
                     hasTwoStepAuthPromise.set(.single(hasTwoStepAuthValue))
-                }, activeSessionsContext: activeSessionsContext, webSessionsContext: webSessionsContext, blockedPeersContext: blockedPeersContext, hasTwoStepAuth: hasTwoStepAuth))
+                }, focusOnItemTag: nil, activeSessionsContext: activeSessionsContext, webSessionsContext: webSessionsContext, blockedPeersContext: blockedPeersContext, hasTwoStepAuth: hasTwoStepAuth))
             })
         })
     }, openDataAndStorage: {
@@ -1267,13 +1376,6 @@ public func settingsController(context: AccountContext, accountManager: AccountM
         resolvedUrlPromise.set(resolvedUrl)
         openFaq(resolvedUrlPromise, anchor)
     }, openEditing: {
-        let _ = (contextValue.get()
-        |> deliverOnMainQueue
-        |> take(1)).start(next: { context in
-            if let presentControllerImpl = presentControllerImpl, let pushControllerImpl = pushControllerImpl {
-                openEditingDisposable.set(openEditSettings(context: context, accountsAndPeers: accountsAndPeers.get(), presentController: presentControllerImpl, pushController: pushControllerImpl))
-            }
-        })
     }, displayCopyContextMenu: {
         let _ = (contextValue.get()
         |> deliverOnMainQueue
@@ -1404,46 +1506,24 @@ public func settingsController(context: AccountContext, accountManager: AccountM
                 if let peer = peer, !peer.profileImageRepresentations.isEmpty {
                     hasPhotos = true
                 }
-                
-                let completedImpl: (UIImage) -> Void = { image in
-                    if let data = image.jpegData(compressionQuality: 0.6) {
-                        let resource = LocalFileMediaResource(fileId: arc4random64())
-                        context.account.postbox.mediaBox.storeResourceData(resource.id, data: data)
-                        let representation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: 640, height: 640), resource: resource)
-                        updateState { state in
-                            var state = state
-                            state.updatingAvatar = .image(representation, true)
-                            return state
-                        }
-                        updateAvatarDisposable.set((updateAccountPhoto(account: context.account, resource: resource, mapResourceToAvatarSizes: { resource, representations in
-                            return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource, representations: representations)
-                        }) |> deliverOnMainQueue).start(next: { result in
-                            switch result {
-                            case .complete:
-                                updateState { state in
-                                    var state = state
-                                    state.updatingAvatar = nil
-                                    return state
-                                }
-                            case .progress:
-                                break
-                            }
-                        }))
-                    }
-                }
-                
-                let mixin = TGMediaAvatarMenuMixin(context: legacyController.context, parentController: emptyController, hasSearchButton: true, hasDeleteButton: hasPhotos, hasViewButton: false, personalPhoto: true, saveEditedPhotos: false, saveCapturedMedia: false, signup: false)!
+                                
+                let mixin = TGMediaAvatarMenuMixin(context: legacyController.context, parentController: emptyController, hasSearchButton: true, hasDeleteButton: hasPhotos, hasViewButton: false, personalPhoto: true, isVideo: false, saveEditedPhotos: false, saveCapturedMedia: false, signup: false)!
                 let _ = currentAvatarMixin.swap(mixin)
                 mixin.requestSearchController = { assetsController in
                     let controller = WebSearchController(context: context, peer: peer, configuration: searchBotsConfiguration, mode: .avatar(initialQuery: nil, completion: { result in
                         assetsController?.dismiss()
-                        completedImpl(result)
+                        completedProfilePhotoImpl(result)
                     }))
                     presentControllerImpl?(controller, ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
                 }
                 mixin.didFinishWithImage = { image in
                     if let image = image {
-                       completedImpl(image)
+                       completedProfilePhotoImpl(image)
+                    }
+                }
+                mixin.didFinishWithVideo = { image, asset, adjustments in
+                    if let image = image {
+//                        completedProfileVideoImpl(image, url, adjustments)
                     }
                 }
                 mixin.didFinishWithDelete = {
@@ -1453,11 +1533,11 @@ public func settingsController(context: AccountContext, accountManager: AccountM
                         if let profileImage = peer?.smallProfileImage {
                             state.updatingAvatar = .image(profileImage, false)
                         } else {
-                            state.updatingAvatar = .none
+                            state.updatingAvatar = ItemListAvatarAndNameInfoItemUpdatingAvatar.none
                         }
                         return state
                     }
-                    updateAvatarDisposable.set((updateAccountPhoto(account: context.account, resource: nil, mapResourceToAvatarSizes: { resource, representations in
+                    updateAvatarDisposable.set((updateAccountPhoto(account: context.account, resource: nil, videoResource: nil, videoStartTimestamp: nil, mapResourceToAvatarSizes: { resource, representations in
                         return mapResourceToAvatarSizes(postbox: context.account.postbox, resource: resource, representations: representations)
                     }) |> deliverOnMainQueue).start(next: { result in
                         switch result {
@@ -1766,16 +1846,21 @@ public func settingsController(context: AccountContext, accountManager: AccountM
                 }
             } else {
                 return Signal { subscriber in
+                    var displayLetters = primary.1.displayLetters
+                    if displayLetters.count == 2 && displayLetters[0].isSingleEmoji && displayLetters[1].isSingleEmoji {
+                        displayLetters = [displayLetters[0]]
+                    }
                     let image = generateImage(size, rotatedContext: { size, context in
                         context.clear(CGRect(origin: CGPoint(), size: size))
                         context.translateBy(x: inset, y: inset)
-                        drawPeerAvatarLetters(context: context, size: CGSize(width: size.width - inset * 2.0, height: size.height - inset * 2.0), font: avatarFont, letters: primary.1.displayLetters, peerId: primary.1.id)
+                        
+                        drawPeerAvatarLetters(context: context, size: CGSize(width: size.width - inset * 2.0, height: size.height - inset * 2.0), font: avatarFont, letters: displayLetters, peerId: primary.1.id)
                     })?.withRenderingMode(.alwaysOriginal)
                     
                     let selectedImage = generateImage(size, rotatedContext: { size, context in
                         context.clear(CGRect(origin: CGPoint(), size: size))
                         context.translateBy(x: inset, y: inset)
-                        drawPeerAvatarLetters(context: context, size: CGSize(width: size.width - inset * 2.0, height: size.height - inset * 2.0), font: avatarFont, letters: primary.1.displayLetters, peerId: primary.1.id)
+                        drawPeerAvatarLetters(context: context, size: CGSize(width: size.width - inset * 2.0, height: size.height - inset * 2.0), font: avatarFont, letters: displayLetters, peerId: primary.1.id)
                         context.translateBy(x: -inset, y: -inset)
                         context.setLineWidth(1.0)
                         context.setStrokeColor(primary.2.rootController.tabBar.selectedIconColor.cgColor)
@@ -2069,4 +2154,8 @@ private func accountContextMenuItems(context: AccountContext, logout: @escaping 
         
         return items
     }
+}
+
+public func makePrivacyAndSecurityController(context: AccountContext) -> ViewController {
+    return privacyAndSecurityController(context: context, focusOnItemTag: PrivacyAndSecurityEntryTag.autoArchive)
 }

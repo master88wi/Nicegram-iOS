@@ -237,7 +237,7 @@ func messageMediaEditingOptions(message: Message) -> MessageMediaEditingOptions 
     return options
 }
 
-func updatedChatEditInterfaceMessagetState(state: ChatPresentationInterfaceState, message: Message) -> ChatPresentationInterfaceState {
+func updatedChatEditInterfaceMessageState(state: ChatPresentationInterfaceState, message: Message) -> ChatPresentationInterfaceState {
     var updated = state
     for media in message.media {
         if let webpage = media as? TelegramMediaWebpage, case let .Loaded(content) = webpage.content {
@@ -401,6 +401,55 @@ func contextMenuForChatPresentationIntefaceState(chatPresentationInterfaceState:
                 interfaceInteraction.toggleMessageStickerStarred(messages[0].id)
                 f(.default)
             })))
+        }
+        
+        if data.messageActions.options.contains(.rateCall) {
+            var callId: CallId?
+            for media in message.media {
+                if let action = media as? TelegramMediaAction, case let .phoneCall(id, discardReason, _, _) = action.action {
+                    if discardReason != .busy && discardReason != .missed {
+                        if let logName = callLogNameForId(id: id, account: context.account) {
+                            let logsPath = callLogsPath(account: context.account)
+                            let logPath = logsPath + "/" + logName
+                            let start = logName.index(logName.startIndex, offsetBy: "\(id)".count + 1)
+                            let end = logName.index(logName.endIndex, offsetBy: -4)
+                            let accessHash = logName[start..<end]
+                            if let accessHash = Int64(accessHash) {
+                                callId = CallId(id: id, accessHash: accessHash)
+                            }
+                            
+                            actions.append(.action(ContextMenuActionItem(text: "Share Statistics", icon: { theme in
+                                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
+                            }, action: { _, f in
+                                f(.dismissWithoutContent)
+                                
+                                let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyWriteable, .excludeDisabled]))
+                                controller.peerSelected = { [weak controller] peerId in
+                                    if let strongController = controller {
+                                        strongController.dismiss()
+                                        
+                                        let id = arc4random64()
+                                        let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: logPath, randomId: id), previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: "CallStats.log")])
+                                        let message: EnqueueMessage = .message(text: "", attributes: [], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil)
+                                        
+                                        let _ = enqueueMessages(account: context.account, peerId: peerId, messages: [message]).start()
+                                    }
+                                }
+                                controllerInteraction.navigationController()?.pushViewController(controller)
+                            })))
+                        }
+                    }
+                    break
+                }
+            }
+            if let callId = callId {
+                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Call_RateCall, icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Rate"), color: theme.actionSheet.primaryTextColor)
+                }, action: { _, f in
+                    let _ = controllerInteraction.rateCall(message, callId)
+                    f(.dismissWithoutContent)
+                })))
+            }
         }
         
         if data.canReply {
@@ -683,34 +732,7 @@ func contextMenuForChatPresentationIntefaceState(chatPresentationInterfaceState:
                 f(.dismissWithoutContent)
             })))
         }
-        
-        if data.messageActions.options.contains(.rateCall) {
-            var callId: CallId?
-            for media in message.media {
-                if let action = media as? TelegramMediaAction, case let .phoneCall(id, discardReason, _) = action.action {
-                    if discardReason != .busy && discardReason != .missed {
-                        if let logName = callLogNameForId(id: id, account: context.account) {
-                            let start = logName.index(logName.startIndex, offsetBy: "\(id)".count + 1)
-                            let end = logName.index(logName.endIndex, offsetBy: -4)
-                            let accessHash = logName[start..<end]
-                            if let accessHash = Int64(accessHash) {
-                                callId = CallId(id: id, accessHash: accessHash)
-                            }
-                        }
-                    }
-                    break
-                }
-            }
-            if let callId = callId {
-                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Call_RateCall, icon: { theme in
-                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Rate"), color: theme.actionSheet.primaryTextColor)
-                }, action: { _, f in
-                    let _ = controllerInteraction.rateCall(message, callId)
-                    f(.dismissWithoutContent)
-                })))
-            }
-        }
-        
+                
         if data.messageActions.options.contains(.forward) {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuForward, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
@@ -952,9 +974,13 @@ func chatAvailableMessageActionsImpl(postbox: Postbox, accountPeerId: PeerId, me
                     optionsMap[id]!.insert(.deleteLocally)
                 } else if let peer = transaction.getPeer(id.peerId) {
                     var isAction = false
+                    var isDice = false
                     for media in message.media {
                         if media is TelegramMediaAction || media is TelegramMediaExpiredContent {
                             isAction = true
+                        }
+                        if media is TelegramMediaDice {
+                            isDice = true
                         }
                     }
                     if let channel = peer as? TelegramChannel {
@@ -1041,6 +1067,11 @@ func chatAvailableMessageActionsImpl(postbox: Postbox, accountPeerId: PeerId, me
                             canDeleteGlobally = true
                         } else if limitsConfiguration.canRemoveIncomingMessagesInPrivateChats {
                             canDeleteGlobally = true
+                        }
+                        
+                        let timestamp = Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970)
+                        if isDice && Int64(message.timestamp) + 60 * 60 * 24 > Int64(timestamp) {
+                            canDeleteGlobally = false
                         }
                         if message.flags.contains(.Incoming) {
                             hadPersonalIncoming = true

@@ -128,8 +128,8 @@ public class PeerMediaCollectionController: TelegramBaseController {
                     self?.openUrl(url)
                 }, openPeer: { peer, navigation in
                     self?.controllerInteraction?.openPeer(peer.id, navigation, nil)
-                }, callPeer: { peerId in
-                    self?.controllerInteraction?.callPeer(peerId)
+                }, callPeer: { peerId, isVideo in
+                    self?.controllerInteraction?.callPeer(peerId, isVideo)
                 }, enqueueMessage: { _ in
                 }, sendSticker: nil, setupTemporaryHiddenMedia: { _, _, _ in }, chatAvatarHiddenMedia: { _, _ in }))
             }
@@ -326,6 +326,8 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 return false
             }, sendGif: { _, _, _ in
                 return false
+            }, sendBotContextResultAsGif: { _, _, _, _ in
+                return false
             }, requestMessageActionCallback: { _, _, _ in
             }, requestMessageActionUrlAuth: { _, _, _ in
             }, activateSwitchInline: { _, _ in
@@ -356,7 +358,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 return nil
             }, reactionContainerNode: {
                 return nil
-            }, presentGlobalOverlayController: { _, _ in }, callPeer: { _ in
+            }, presentGlobalOverlayController: { _, _ in }, callPeer: { _, _ in
             }, longTap: { [weak self] content, _ in
                 if let strongSelf = self {
                     strongSelf.view.endEditing(true)
@@ -408,7 +410,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 self?.activateSearch()
             }, setupReply: { _ in
             }, canSetupReply: { _ in
-                return false
+                return .none
         }, navigateToFirstDateMessage: { _ in
         }, requestRedeliveryOfFailedMessages: { _ in
         }, addContact: { _ in
@@ -422,7 +424,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, sendScheduledMessagesNow: { _ in
         }, editScheduledMessagesTime: { _ in
         }, performTextSelectionAction: { _, _, _ in
-        }, updateMessageReaction: { _, _ in
+        }, updateMessageLike: { _, _ in
         }, openMessageReactions: { _ in
         }, displaySwipeToReplyHint: {
         }, dismissReplyMarkupMessage: { _ in
@@ -432,6 +434,9 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, displayPsa: { _, _ in
         }, displayDiceTooltip: { _ in
         }, animateDiceSuccess: {  
+        }, greetingStickerNode: {
+            return nil
+        }, openPeerContextMenu: { _, _, _, _ in
         }, requestMessageUpdate: { _ in
         }, cancelInteractiveKeyboardGestures: {
         }, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings,
@@ -501,6 +506,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, toggleMembersSearch: { _ in
         }, navigateToMessage: { _ in
         }, navigateToChat: { _ in
+        }, navigateToProfile: { _ in
         }, openPeerInfo: {
         }, togglePeerNotifications: {
         }, sendContextResult: { _, _, _, _ in
@@ -528,7 +534,7 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, presentPeerContact: {
         }, dismissReportPeer: {
         }, deleteChat: {
-        }, beginCall: {
+        }, beginCall: { _ in
         }, toggleMessageStickerStarred: { _ in
         }, presentController: { _, _ in
         }, getNavigationController: {
@@ -546,8 +552,9 @@ public class PeerMediaCollectionController: TelegramBaseController {
         }, displaySlowmodeTooltip: { _, _ in
         }, displaySendMessageOptions: { _, _ in
         }, openScheduledMessages: {
+        }, openPeersNearby: {
         }, displaySearchResultsTooltip: { _, _ in
-        }, statuses: nil)
+        }, unarchivePeer: {}, statuses: nil)
         
         self.updateInterfaceState(animated: false, { return $0 })
         
@@ -755,9 +762,9 @@ public class PeerMediaCollectionController: TelegramBaseController {
                 strongSelf.context.sharedContext.openResolvedUrl(result, context: strongSelf.context, urlContext: .generic, navigationController: strongSelf.navigationController as? NavigationController, openPeer: { peerId, navigation in
                     if let strongSelf = self {
                         switch navigation {
-                            case let .chat(_, subject):
+                            case let .chat(_, subject, peekData):
                                 if let navigationController = strongSelf.navigationController as? NavigationController {
-                                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, keepStack: .always))
+                                    strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, keepStack: .always, peekData: peekData))
                                 }
                             case .info:
                                 strongSelf.navigationActionDisposable.set((strongSelf.context.account.postbox.loadedPeerWithId(peerId)
@@ -858,8 +865,8 @@ public class PeerMediaCollectionController: TelegramBaseController {
                             if let strongSelf = self {
                                 strongSelf.updateInterfaceState(animated: false, { $0.withoutSelectionState() })
                                 
-                                let ready = ValuePromise<Bool>()
-                                strongSelf.messageContextDisposable.set((ready.get() |> take(1) |> deliverOnMainQueue).start(next: { _ in
+                                let ready = Promise<Bool>()
+                                strongSelf.messageContextDisposable.set((ready.get() |> filter { $0 } |> take(1) |> deliverOnMainQueue).start(next: { _ in
                                     if let strongController = controller {
                                         strongController.dismiss()
                                     }

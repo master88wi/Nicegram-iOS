@@ -78,7 +78,7 @@ enum ChatMessageBubbleContentTapAction {
     case instantPage
     case wallpaper
     case theme
-    case call(PeerId)
+    case call(peerId: PeerId, isVideo: Bool)
     case openMessage
     case timecode(Double, String)
     case tooltip(String, ASDisplayNode?, CGRect?)
@@ -183,7 +183,7 @@ class ChatMessageBubbleContentNode: ASDisplayNode {
     func updateIsExtractedToContextPreview(_ value: Bool) {
     }
     
-    func reactionTargetNode(value: String) -> (ASDisplayNode, Int)? {
+    func reactionTargetNode(value: String) -> (ASDisplayNode, ASDisplayNode)? {
         return nil
     }
 }

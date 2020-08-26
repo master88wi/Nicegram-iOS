@@ -60,7 +60,7 @@ final class ChatMediaGalleryThumbnailItem: GalleryThumbnailItem {
         }
     }
     
-    var image: (Signal<(TransformImageArguments) -> DrawingContext?, NoError>, CGSize) {
+    func image(synchronous: Bool) -> (Signal<(TransformImageArguments) -> DrawingContext?, NoError>, CGSize) {
         switch self.thumbnail {
             case let .image(imageReference):
                 if let representation = largestImageRepresentation(imageReference.media.representations) {
@@ -89,18 +89,20 @@ class ChatImageGalleryItem: GalleryItem {
     let location: MessageHistoryEntryLocation?
     let performAction: (GalleryControllerInteractionTapAction) -> Void
     let openActionOptions: (GalleryControllerInteractionTapAction) -> Void
+    let present: (ViewController, Any?) -> Void
     
-    init(context: AccountContext, presentationData: PresentationData, message: Message, location: MessageHistoryEntryLocation?, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, message: Message, location: MessageHistoryEntryLocation?, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         self.presentationData = presentationData
         self.message = message
         self.location = location
         self.performAction = performAction
         self.openActionOptions = openActionOptions
+        self.present = present
     }
     
-    func node() -> GalleryItemNode {
-        let node = ChatImageGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions)
+    func node(synchronous: Bool) -> GalleryItemNode {
+        let node = ChatImageGalleryItemNode(context: self.context, presentationData: self.presentationData, performAction: self.performAction, openActionOptions: self.openActionOptions, present: self.present)
         
         for media in self.message.media {
             if let image = media as? TelegramMediaImage {
@@ -129,7 +131,7 @@ class ChatImageGalleryItem: GalleryItem {
         return node
     }
     
-    func updateNode(node: GalleryItemNode) {
+    func updateNode(node: GalleryItemNode, synchronous: Bool) {
         if let node = node as? ChatImageGalleryItemNode, let location = self.location {
             node._title.set(.single(self.presentationData.strings.Items_NOfM("\(location.index + 1)", "\(location.count)").0))
             
@@ -165,7 +167,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private var tilingNode: TilingNode?
     fileprivate let _ready = Promise<Void>()
     fileprivate let _title = Promise<String>()
-    fileprivate let _rightBarButtonItem = Promise<UIBarButtonItem?>(nil)
+    fileprivate let _rightBarButtonItems = Promise<[UIBarButtonItem]?>(nil)
     private let statusNodeContainer: HighlightableButtonNode
     private let statusNode: RadialStatusNode
     private let footerContentNode: ChatItemGalleryFooterContentNode
@@ -177,11 +179,11 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private let dataDisposable = MetaDisposable()
     private var status: MediaResourceStatus?
     
-    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void) {
+    init(context: AccountContext, presentationData: PresentationData, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction) -> Void, present: @escaping (ViewController, Any?) -> Void) {
         self.context = context
         
         self.imageNode = TransformImageNode()
-        self.footerContentNode = ChatItemGalleryFooterContentNode(context: context, presentationData: presentationData)
+        self.footerContentNode = ChatItemGalleryFooterContentNode(context: context, presentationData: presentationData, present: present)
         self.footerContentNode.performAction = performAction
         self.footerContentNode.openActionOptions = openActionOptions
         
@@ -259,8 +261,10 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 self._ready.set(.single(Void()))
             }
             if imageReference.media.flags.contains(.hasStickers) {
-                let rightBarButtonItem = UIBarButtonItem(image: UIImage(bundleImageName: "Media Gallery/Stickers"), style: .plain, target: self, action: #selector(self.openStickersButtonPressed))
-                self._rightBarButtonItem.set(.single(rightBarButtonItem))
+                let rightBarButtonItem = UIBarButtonItem(image: generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/Stickers"), color: .white), style: .plain, target: self, action: #selector(self.openStickersButtonPressed))
+                self._rightBarButtonItems.set(.single([rightBarButtonItem]))
+            } else {
+                self._rightBarButtonItems.set(.single([]))
             }
         }
         self.contextAndMedia = (self.context, imageReference.abstract)
@@ -420,7 +424,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         }))
     }
     
-    override func animateIn(from node: (ASDisplayNode, CGRect, () -> (UIView?, UIView?)), addToTransitionSurface: (UIView) -> Void) {
+    override func animateIn(from node: (ASDisplayNode, CGRect, () -> (UIView?, UIView?)), addToTransitionSurface: (UIView) -> Void, completion: @escaping () -> Void) {
         let contentNode = self.tilingNode ?? self.imageNode
         
         var transformedFrame = node.0.view.convert(node.0.view.bounds, to: contentNode.view)
@@ -575,8 +579,8 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         return self._title.get()
     }
     
-    override func rightBarButtonItem() -> Signal<UIBarButtonItem?, NoError> {
-        return self._rightBarButtonItem.get()
+    override func rightBarButtonItems() -> Signal<[UIBarButtonItem]?, NoError> {
+        return self._rightBarButtonItems.get()
     }
     
     override func footerContent() -> Signal<(GalleryFooterContentNode?, GalleryOverlayContentNode?), NoError> {

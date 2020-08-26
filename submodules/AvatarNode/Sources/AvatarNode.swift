@@ -11,6 +11,7 @@ import AnimationUI
 import AppBundle
 import AccountContext
 import NicegramLib
+import Emoji
 
 private let deletedIcon = UIImage(bundleImageName: "Avatar/DeletedIcon")?.precomposed()
 private let savedMessagesIcon = generateTintedImage(image: UIImage(bundleImageName: "Avatar/SavedMessagesIcon"), color: .white)
@@ -256,6 +257,7 @@ public final class AvatarNode: ASDisplayNode {
         var iconColor = theme.chatList.unpinnedArchiveAvatarColor.foregroundColor
         var backgroundColor = theme.chatList.unpinnedArchiveAvatarColor.backgroundColors.topColor
         let animationBackgroundNode = ASImageNode()
+        animationBackgroundNode.isUserInteractionEnabled = false
         animationBackgroundNode.frame = self.imageNode.frame
         if let overrideImage = self.overrideImage, case let .archivedChatsIcon(hiddenByDefault) = overrideImage {
             let backgroundColors: (UIColor, UIColor)
@@ -274,6 +276,7 @@ public final class AvatarNode: ASDisplayNode {
         self.addSubnode(animationBackgroundNode)
         
         let animationNode = AnimationNode(animation: "anim_archiveAvatar", colors: ["box1.box1.Fill 1": iconColor, "box3.box3.Fill 1": iconColor, "box2.box2.Fill 1": backgroundColor], scale: 0.1653828)
+        animationNode.isUserInteractionEnabled = false
         animationNode.completion = { [weak animationBackgroundNode, weak self] in
             self?.imageNode.isHidden = false
             animationBackgroundNode?.removeFromSupernode()
@@ -330,7 +333,7 @@ public final class AvatarNode: ASDisplayNode {
             if let peer = peer, let signal = peerAvatarImage(account: context.account, peerReference: PeerReference(peer), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded) {
                 self.contents = nil
                 self.displaySuspended = true
-                self.imageReady.set(self.imageNode.ready)
+                self.imageReady.set(self.imageNode.contentReady)
                 self.imageNode.setSignal(signal |> beforeNext { [weak self] next in
                     Queue.mainQueue().async {
                         self?.unroundedImage = next?.1
@@ -344,6 +347,7 @@ public final class AvatarNode: ASDisplayNode {
                     if self.editOverlayNode == nil {
                         let editOverlayNode = AvatarEditOverlayNode()
                         editOverlayNode.frame = self.imageNode.frame
+                        editOverlayNode.isUserInteractionEnabled = false
                         self.addSubnode(editOverlayNode)
                         
                         self.editOverlayNode = editOverlayNode
@@ -523,7 +527,11 @@ public final class AvatarNode: ASDisplayNode {
                     context.draw(archivedChatsIcon.cgImage!, in: CGRect(origin: CGPoint(x: floor((bounds.size.width - archivedChatsIcon.size.width) / 2.0), y: floor((bounds.size.height - archivedChatsIcon.size.height) / 2.0)), size: archivedChatsIcon.size))
                 }
             } else {
-                let letters = parameters.letters
+                var letters = parameters.letters
+                if letters.count == 2 && letters[0].isSingleEmoji && letters[1].isSingleEmoji {
+                    letters = [letters[0]]
+                }
+                
                 let string = letters.count == 0 ? "" : (letters[0] + (letters.count == 1 ? "" : letters[1]))
                 let attributedString = NSAttributedString(string: string, attributes: [NSAttributedString.Key.font: parameters.font, NSAttributedString.Key.foregroundColor: UIColor.white])
                 

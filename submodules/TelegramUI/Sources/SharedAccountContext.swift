@@ -207,6 +207,43 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         
         self.mediaManager = MediaManagerImpl(accountManager: accountManager, inForeground: applicationBindings.applicationInForeground, presentationData: presentationData)
         
+        self.mediaManager.overlayMediaManager.updatePossibleEmbeddingItem = { [weak self] item in
+            guard let strongSelf = self else {
+                return
+            }
+            guard let navigationController = strongSelf.mainWindow?.viewController as? NavigationController else {
+                return
+            }
+            var content: NavigationControllerDropContent?
+            if let item = item {
+                content = NavigationControllerDropContent(
+                    position: item.position,
+                    item: VideoNavigationControllerDropContentItem(
+                        itemNode: item.itemNode
+                    )
+                )
+            }
+            
+            navigationController.updatePossibleControllerDropContent(content: content)
+        }
+        
+        self.mediaManager.overlayMediaManager.embedPossibleEmbeddingItem = { [weak self] item in
+            guard let strongSelf = self else {
+                return false
+            }
+            guard let navigationController = strongSelf.mainWindow?.viewController as? NavigationController else {
+                return false
+            }
+            let content = NavigationControllerDropContent(
+                position: item.position,
+                item: VideoNavigationControllerDropContentItem(
+                    itemNode: item.itemNode
+                )
+            )
+            
+            return navigationController.acceptPossibleControllerDropContent(content: content)
+        }
+        
         self._autodownloadSettings.set(.single(initialPresentationDataAndSettings.autodownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings])
             |> map { sharedData in
@@ -597,14 +634,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 if let strongSelf = self {
                     let resolvedText: CallStatusText
                     if let state = state {
-                        switch state {
-                            case .connecting, .requesting, .terminating, .ringing, .waiting:
-                                resolvedText = .inProgress(nil)
-                            case .terminated:
-                                resolvedText = .none
-                            case .active(let timestamp, _, _), .reconnecting(let timestamp, _, _):
-                                resolvedText = .inProgress(timestamp)
-                        }
+//                        if [.active, .paused].contains(state.videoState) || [.active, .paused].contains(state.remoteVideoState) {
+//                            resolvedText = .none
+//                        } else {
+                            switch state.state {
+                                case .connecting, .requesting, .terminating, .ringing, .waiting:
+                                    resolvedText = .inProgress(nil)
+                                case .terminated:
+                                    resolvedText = .none
+                                case .active(let timestamp, _, _), .reconnecting(let timestamp, _, _):
+                                    resolvedText = .inProgress(timestamp)
+                            }
+//                        }
                     } else {
                         resolvedText = .none
                     }
@@ -639,9 +680,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             
             mainWindow.inCallNavigate = { [weak self] in
                 if let strongSelf = self, let callController = strongSelf.callController {
-                    if callController.isNodeLoaded && callController.view.superview == nil {
+                    if callController.isNodeLoaded {
                         mainWindow.hostView.containerView.endEditing(true)
-                        mainWindow.present(callController, on: .calls)
+                        if callController.view.superview == nil {
+                            mainWindow.present(callController, on: .calls)
+                        } else {
+                            callController.expandFromPipIfPossible()
+                        }
                     }
                 }
             }
@@ -897,7 +942,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     public func makeTempAccountContext(account: Account) -> AccountContext {
-        return AccountContextImpl(sharedContext: self, account: account/*, tonContext: nil*/, limitsConfiguration: .defaultValue, contentSettings: .default, temp: true)
+        return AccountContextImpl(sharedContext: self, account: account, limitsConfiguration: .defaultValue, contentSettings: .default, appConfiguration: .defaultValue, temp: true)
     }
     
     public func openChatMessage(_ params: OpenChatMessageParams) -> Bool {
@@ -1015,6 +1060,11 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return controller
     }
     
+    public func makeChannelAdminController(context: AccountContext, peerId: PeerId, adminId: PeerId, initialParticipant: ChannelParticipant) -> ViewController? {
+        let controller = channelAdminController(context: context, peerId: peerId, adminId: adminId, initialParticipant: initialParticipant, updated: { _ in }, upgradedToSupergroup: { _, _ in }, transferedOwnership: { _ in })
+        return controller
+    }
+    
     public func openExternalUrl(context: AccountContext, urlContext: OpenURLContext, url: String, forceExternal: Bool, presentationData: PresentationData, navigationController: NavigationController?, dismissInput: @escaping () -> Void) {
         openExternalUrlImpl(context: context, urlContext: urlContext, url: url, forceExternal: forceExternal, presentationData: presentationData, navigationController: navigationController, dismissInput: dismissInput)
     }
@@ -1051,8 +1101,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return peerSharedMediaControllerImpl(context: context, peerId: peerId)
     }
     
-    public func makeChatRecentActionsController(context: AccountContext, peer: Peer) -> ViewController {
-        return ChatRecentActionsController(context: context, peer: peer)
+    public func makeChatRecentActionsController(context: AccountContext, peer: Peer, adminPeerId: PeerId?) -> ViewController {
+        return ChatRecentActionsController(context: context, peer: peer, adminPeerId: adminPeerId)
     }
     
     public func presentContactsWarningSuppression(context: AccountContext, present: (ViewController, Any?) -> Void) {
@@ -1107,16 +1157,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     tapMessage?(message)
             }, clickThroughMessage: {
                 clickThroughMessage?()
-            }, toggleMessagesSelection: { _, _ in }, sendCurrentMessage: { _ in }, sendMessage: { _ in }, sendSticker: { _, _, _, _ in return false }, sendGif: { _, _, _ in return false }, requestMessageActionCallback: { _, _, _ in }, requestMessageActionUrlAuth: { _, _, _ in }, activateSwitchInline: { _, _ in }, openUrl: { _, _, _, _ in }, shareCurrentLocation: {}, shareAccountContact: {}, sendBotCommand: { _, _ in }, openInstantPage: { _, _ in  }, openWallpaper: { _ in  }, openTheme: { _ in  }, openHashtag: { _, _ in }, updateInputState: { _ in }, updateInputMode: { _ in }, openMessageShareMenu: { _ in
+            }, toggleMessagesSelection: { _, _ in }, sendCurrentMessage: { _ in }, sendMessage: { _ in }, sendSticker: { _, _, _, _ in return false }, sendGif: { _, _, _ in return false }, sendBotContextResultAsGif: { _, _, _, _ in
+                return false
+            }, requestMessageActionCallback: { _, _, _ in }, requestMessageActionUrlAuth: { _, _, _ in }, activateSwitchInline: { _, _ in }, openUrl: { _, _, _, _ in }, shareCurrentLocation: {}, shareAccountContact: {}, sendBotCommand: { _, _ in }, openInstantPage: { _, _ in  }, openWallpaper: { _ in  }, openTheme: { _ in  }, openHashtag: { _, _ in }, updateInputState: { _ in }, updateInputMode: { _ in }, openMessageShareMenu: { _ in
             }, presentController: { _, _ in }, navigationController: {
                 return nil
             }, chatControllerNode: {
                 return nil
             }, reactionContainerNode: {
                 return nil
-            }, presentGlobalOverlayController: { _, _ in }, callPeer: { _ in }, longTap: { _, _ in }, openCheckoutOrReceipt: { _ in }, openSearch: { }, setupReply: { _ in
+            }, presentGlobalOverlayController: { _, _ in }, callPeer: { _, _ in }, longTap: { _, _ in }, openCheckoutOrReceipt: { _ in }, openSearch: { }, setupReply: { _ in
             }, canSetupReply: { _ in
-                return false
+                return .none
             }, navigateToFirstDateMessage: { _ in
             }, requestRedeliveryOfFailedMessages: { _ in
             }, addContact: { _ in
@@ -1130,7 +1182,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }, sendScheduledMessagesNow: { _ in
             }, editScheduledMessagesTime: { _ in
             }, performTextSelectionAction: { _, _, _ in
-            }, updateMessageReaction: { _, _ in
+            }, updateMessageLike: { _, _ in
             }, openMessageReactions: { _ in
             }, displaySwipeToReplyHint: {
             }, dismissReplyMarkupMessage: { _ in
@@ -1140,6 +1192,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }, displayPsa: { _, _ in
             }, displayDiceTooltip: { _ in
             }, animateDiceSuccess: {
+            }, greetingStickerNode: {
+                return nil
+            }, openPeerContextMenu: { _, _, _, _ in
             }, requestMessageUpdate: { _ in
             }, cancelInteractiveKeyboardGestures: {
             }, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings,
@@ -1252,22 +1307,26 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     public func makeRecentSessionsController(context: AccountContext, activeSessionsContext: ActiveSessionsContext) -> ViewController & RecentSessionsController {
         return recentSessionsController(context: context, activeSessionsContext: activeSessionsContext, webSessionsContext: WebSessionsContext(account: context.account), websitesOnly: false)
     }
+    
+    public func makePrivacyAndSecurityController(context: AccountContext) -> ViewController {
+        return SettingsUI.makePrivacyAndSecurityController(context: context)
+    }
 }
 
 private let defaultChatControllerInteraction = ChatControllerInteraction.default
 
 private func peerInfoControllerImpl(context: AccountContext, peer: Peer, mode: PeerInfoControllerMode, avatarInitiallyExpanded: Bool, isOpenedFromChat: Bool) -> ViewController? {
     if let _ = peer as? TelegramGroup {
-        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeer: false, callMessages: [])
+        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, callMessages: [])
     } else if let channel = peer as? TelegramChannel {
-        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeer: false, callMessages: [])
+        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, callMessages: [])
     } else if peer is TelegramUser {
-        var nearbyPeer = false
+        var nearbyPeerDistance: Int32?
         var callMessages: [Message] = []
         var ignoreGroupInCommon: PeerId?
         switch mode {
-        case .nearbyPeer:
-            nearbyPeer = true
+        case let .nearbyPeer(distance):
+            nearbyPeerDistance = distance
         case let .calls(messages):
             callMessages = messages
         case .generic:
@@ -1275,9 +1334,9 @@ private func peerInfoControllerImpl(context: AccountContext, peer: Peer, mode: P
         case let .group(id):
             ignoreGroupInCommon = id
         }
-        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeer: nearbyPeer, callMessages: callMessages, ignoreGroupInCommon: ignoreGroupInCommon)
+        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nearbyPeerDistance, callMessages: callMessages, ignoreGroupInCommon: ignoreGroupInCommon)
     } else if peer is TelegramSecretChat {
-        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeer: false, callMessages: [])
+        return PeerInfoScreen(context: context, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, callMessages: [])
     }
     return nil
 }

@@ -18,6 +18,7 @@ final class ChatRecentActionsController: TelegramBaseController {
     
     private let context: AccountContext
     private let peer: Peer
+    private let initialAdminPeerId: PeerId?
     private var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
     
@@ -26,9 +27,10 @@ final class ChatRecentActionsController: TelegramBaseController {
     
     private let titleView: ChatRecentActionsTitleView
     
-    init(context: AccountContext, peer: Peer) {
+    init(context: AccountContext, peer: Peer, adminPeerId: PeerId?) {
         self.context = context
         self.peer = peer
+        self.initialAdminPeerId = adminPeerId
         
         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
         
@@ -75,6 +77,7 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, toggleMembersSearch: { _ in
         }, navigateToMessage: { _ in
         }, navigateToChat: { _ in
+        }, navigateToProfile: { _ in
         }, openPeerInfo: {
         }, togglePeerNotifications: {
         }, sendContextResult: { _, _, _, _ in
@@ -102,7 +105,7 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, presentPeerContact: {
         }, dismissReportPeer: {
         }, deleteChat: {
-        }, beginCall: {
+        }, beginCall: { _ in
         }, toggleMessageStickerStarred: { _ in
         }, presentController: { _, _ in
         }, getNavigationController: {
@@ -120,8 +123,9 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, displaySlowmodeTooltip: { _, _ in
         }, displaySendMessageOptions: { _, _ in
         }, openScheduledMessages: {
+        }, openPeersNearby: {
         }, displaySearchResultsTooltip: { _, _ in
-        }, statuses: nil)
+        }, unarchivePeer: {}, statuses: nil)
         
         self.navigationItem.titleView = self.titleView
         
@@ -171,6 +175,11 @@ final class ChatRecentActionsController: TelegramBaseController {
         }, getNavigationController: { [weak self] in
             return self?.navigationController as? NavigationController
         })
+        
+        if let adminPeerId = self.initialAdminPeerId {
+            self.controllerNode.updateFilter(events: .all, adminPeerIds: [adminPeerId])
+            self.updateTitle()
+        }
         
         self.displayNodeDidLoad()
     }

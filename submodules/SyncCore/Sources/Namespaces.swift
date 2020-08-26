@@ -57,6 +57,7 @@ public struct Namespaces {
         public static let CloudSavedStickers: Int32 = 7
         public static let RecentlyUsedHashtags: Int32 = 8
         public static let CloudThemes: Int32 = 9
+        public static let CloudGreetingStickers: Int32 = 10
     }
     
     public struct CachedItemCollection {
@@ -70,6 +71,7 @@ public struct Namespaces {
         public static let cachedWallpapersConfiguration: Int8 = 7
         public static let cachedThemesConfiguration: Int8 = 8
         public static let cachedPollResults: Int8 = 9
+        public static let cachedContextResults: Int8 = 10
     }
     
     public struct UnorderedItemList {
@@ -93,8 +95,9 @@ public extension MessageTags {
     static let voiceOrInstantVideo = MessageTags(rawValue: 1 << 4)
     static let unseenPersonalMessage = MessageTags(rawValue: 1 << 5)
     static let liveLocation = MessageTags(rawValue: 1 << 6)
+    static let gif = MessageTags(rawValue: 1 << 7)
     
-    static let all: MessageTags = [.photoOrVideo, .file, .music, .webPage, .voiceOrInstantVideo, .unseenPersonalMessage, .liveLocation]
+    static let all: MessageTags = [.photoOrVideo, .file, .music, .webPage, .voiceOrInstantVideo, .unseenPersonalMessage, .liveLocation, .gif]
 }
 
 public extension GlobalMessageTags {

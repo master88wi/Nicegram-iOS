@@ -144,9 +144,9 @@ private enum ChatListRecentEntry: Comparable, Identifiable {
                 if let user = primaryPeer as? TelegramUser {
                     let servicePeer = isServicePeer(primaryPeer)
                     if user.flags.contains(.isSupport) && !servicePeer {
-                        status = .custom(strings.Bot_GenericSupportStatus)
+                        status = .custom(string: strings.Bot_GenericSupportStatus, multiline: false)
                     } else if let _ = user.botInfo {
-                        status = .custom(strings.Bot_GenericBotStatus)
+                        status = .custom(string: strings.Bot_GenericBotStatus, multiline: false)
                     } else if user.id != context.account.peerId && !servicePeer {
                         let presence = peer.presence ?? TelegramUserPresence(status: .none, lastActivity: 0)
                         status = .presence(presence, timeFormat)
@@ -154,19 +154,19 @@ private enum ChatListRecentEntry: Comparable, Identifiable {
                         status = .none
                     }
                 } else if let group = primaryPeer as? TelegramGroup {
-                    status = .custom(strings.GroupInfo_ParticipantCount(Int32(group.participantCount)))
+                    status = .custom(string: strings.GroupInfo_ParticipantCount(Int32(group.participantCount)), multiline: false)
                 } else if let channel = primaryPeer as? TelegramChannel {
                     if case .group = channel.info {
                         if let count = peer.subpeerSummary?.count {
-                            status = .custom(strings.GroupInfo_ParticipantCount(Int32(count)))
+                            status = .custom(string: strings.GroupInfo_ParticipantCount(Int32(count)), multiline: false)
                         } else {
-                            status = .custom(strings.Group_Status)
+                            status = .custom(string: strings.Group_Status, multiline: false)
                         }
                     } else {
                         if let count = peer.subpeerSummary?.count {
-                            status = .custom(strings.Conversation_StatusSubscribers(Int32(count)))
+                            status = .custom(string: strings.Conversation_StatusSubscribers(Int32(count)), multiline: false)
                         } else {
-                            status = .custom(strings.Channel_Status)
+                            status = .custom(string: strings.Channel_Status, multiline: false)
                         }
                     }
                 } else {
@@ -485,7 +485,7 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                     }
                 })
             case let .message(message, peer, readState, presentationData):
-                return ChatListItem(presentationData: presentationData, context: context, peerGroupId: .root, filterData: nil, index: ChatListIndex(pinningIndex: nil, messageIndex: message.index), content: .peer(message: message, peer: peer, combinedReadState: readState, isRemovedFromTotalUnreadCount: false, presence: nil, summaryInfo: ChatListMessageTagSummaryInfo(), embeddedState: nil, inputActivities: nil, promoInfo: nil, ignoreUnreadBadge: true, displayAsMessage: false, hasFailedMessages: false), editing: false, hasActiveRevealControls: false, selected: false, header: enableHeaders ? ChatListSearchItemHeader(type: .messages, theme: presentationData.theme, strings: presentationData.strings, actionTitle: nil, action: nil) : nil, enableContextActions: false, hiddenOffset: false, interaction: interaction)
+                return ChatListItem(presentationData: presentationData, context: context, peerGroupId: .root, filterData: nil, index: ChatListIndex(pinningIndex: nil, messageIndex: message.index), content: .peer(messages: [message], peer: peer, combinedReadState: readState, isRemovedFromTotalUnreadCount: false, presence: nil, summaryInfo: ChatListMessageTagSummaryInfo(), embeddedState: nil, inputActivities: nil, promoInfo: nil, ignoreUnreadBadge: true, displayAsMessage: false, hasFailedMessages: false), editing: false, hasActiveRevealControls: false, selected: false, header: enableHeaders ? ChatListSearchItemHeader(type: .messages, theme: presentationData.theme, strings: presentationData.strings, actionTitle: nil, action: nil) : nil, enableContextActions: false, hiddenOffset: false, interaction: interaction)
             case let .addContact(phoneNumber, theme, strings):
                 return ContactsAddItem(theme: theme, strings: strings, phoneNumber: phoneNumber, header: ChatListSearchItemHeader(type: .phoneNumber, theme: theme, strings: strings, actionTitle: nil, action: nil), action: {
                     interaction.addContact(phoneNumber)
@@ -1028,7 +1028,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             }
         }, setItemPinned: { _, _ in
         }, setPeerMuted: { _, _ in
-        }, deletePeer: { _ in
+        }, deletePeer: { _, _ in
         }, updatePeerGrouping: { _, _ in
         }, togglePeerMarkedUnread: { _, _ in
         }, toggleArchivedFolderHiddenByDefault: {
@@ -1385,8 +1385,8 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                 bounds = selectedItemNode.bounds
             }
             switch item.content {
-                case let .peer(message, peer, _, _, _, _, _, _, _, _, _, _):
-                    return (selectedItemNode.view, bounds, message?.id ?? peer.peerId)
+                case let .peer(messages, peer, _, _, _, _, _, _, _, _, _, _):
+                    return (selectedItemNode.view, bounds, messages.last?.id ?? peer.peerId)
                 case let .groupReference(groupId, _, _, _, _):
                     return (selectedItemNode.view, bounds, groupId)
             }

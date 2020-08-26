@@ -51,13 +51,13 @@ class WallpaperGalleryItem: GalleryItem {
         self.source = source
     }
     
-    func node() -> GalleryItemNode {
+    func node(synchronous: Bool) -> GalleryItemNode {
         let node = WallpaperGalleryItemNode(context: self.context)
         node.setEntry(self.entry, arguments: self.arguments, source: self.source)
         return node
     }
     
-    func updateNode(node: GalleryItemNode) {
+    func updateNode(node: GalleryItemNode, synchronous: Bool) {
         if let node = node as? WallpaperGalleryItemNode {
             node.setEntry(self.entry, arguments: self.arguments, source: self.source)
         }
@@ -131,6 +131,7 @@ final class WallpaperGalleryItemNode: GalleryItemNode {
         
         self.messagesContainerNode = ASDisplayNode()
         self.messagesContainerNode.transform = CATransform3DMakeScale(1.0, -1.0, 1.0)
+        self.messagesContainerNode.isUserInteractionEnabled = false
         
         self.blurButtonNode = WallpaperOptionButtonNode(title: self.presentationData.strings.WallpaperPreview_Blurred, value: .check(false))
         self.blurButtonNode.setEnabled(false)
@@ -272,7 +273,7 @@ final class WallpaperGalleryItemNode: GalleryItemNode {
                             for representation in file.file.previewRepresentations {
                                 convertedRepresentations.append(ImageRepresentationWithReference(representation: representation, reference: reference(for: representation.resource, media: file.file, message: message)))
                             }
-                            convertedRepresentations.append(ImageRepresentationWithReference(representation: .init(dimensions: dimensions, resource: file.file.resource), reference: reference(for: file.file.resource, media: file.file, message: message)))
+                            convertedRepresentations.append(ImageRepresentationWithReference(representation: .init(dimensions: dimensions, resource: file.file.resource, progressiveSizes: []), reference: reference(for: file.file.resource, media: file.file, message: message)))
                             
                             if wallpaper.isPattern {
                                 var patternColors: [UIColor] = []
@@ -417,19 +418,19 @@ final class WallpaperGalleryItemNode: GalleryItemNode {
                     var thumbnailDimensions: CGSize?
                     var thumbnailResource: TelegramMediaResource?
                     switch result {
-                    case let .externalReference(_, _, _, _, _, _, content, thumbnail, _):
-                        if let content = content {
+                    case let .externalReference(externalReference):
+                        if let content = externalReference.content {
                             imageResource = content.resource
                         }
-                        if let thumbnail = thumbnail {
+                        if let thumbnail = externalReference.thumbnail {
                             thumbnailResource = thumbnail.resource
                             thumbnailDimensions = thumbnail.dimensions?.cgSize
                         }
-                        if let dimensions = content?.dimensions {
+                        if let dimensions = externalReference.content?.dimensions {
                             imageDimensions = dimensions.cgSize
                         }
-                    case let .internalReference(_, _, _, _, _, image, _, _):
-                        if let image = image {
+                    case let .internalReference(internalReference):
+                        if let image = internalReference.image {
                             if let imageRepresentation = imageRepresentationLargerThan(image.representations, size: PixelDimensions(width: 1000, height: 800)) {
                                 imageDimensions = imageRepresentation.dimensions.cgSize
                                 imageResource = imageRepresentation.resource
@@ -447,9 +448,9 @@ final class WallpaperGalleryItemNode: GalleryItemNode {
                         
                         var representations: [TelegramMediaImageRepresentation] = []
                         if let thumbnailResource = thumbnailResource, let thumbnailDimensions = thumbnailDimensions {
-                            representations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(thumbnailDimensions), resource: thumbnailResource))
+                            representations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(thumbnailDimensions), resource: thumbnailResource, progressiveSizes: []))
                         }
-                        representations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(imageDimensions), resource: imageResource))
+                        representations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(imageDimensions), resource: imageResource, progressiveSizes: []))
                         let tmpImage = TelegramMediaImage(imageId: MediaId(namespace: 0, id: 0), representations: representations, immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
                         
                         signal = chatMessagePhoto(postbox: context.account.postbox, photoReference: .standalone(media: tmpImage))

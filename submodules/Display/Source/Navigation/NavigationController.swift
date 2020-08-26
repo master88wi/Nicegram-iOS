@@ -102,6 +102,19 @@ private final class NavigationControllerNode: ASDisplayNode {
     }
 }
 
+public protocol NavigationControllerDropContentItem: class {
+}
+
+public final class NavigationControllerDropContent {
+    public let position: CGPoint
+    public let item: NavigationControllerDropContentItem
+    
+    public init(position: CGPoint, item: NavigationControllerDropContentItem) {
+        self.position = position
+        self.item = item
+    }
+}
+
 open class NavigationController: UINavigationController, ContainableController, UIGestureRecognizerDelegate {
     public var isOpaqueWhenInOverlay: Bool = true
     public var blocksBackgroundWhenInOverlay: Bool = true
@@ -566,6 +579,7 @@ open class NavigationController: UINavigationController, ContainableController, 
         var previousModalContainer: NavigationModalContainer?
         var visibleModalCount = 0
         var topModalIsFlat = false
+        var isLandscape = layout.orientation == .landscape
         var hasVisibleStandaloneModal = false
         var topModalDismissProgress: CGFloat = 0.0
         
@@ -771,7 +785,7 @@ open class NavigationController: UINavigationController, ContainableController, 
                 let visibleRootModalDismissProgress: CGFloat
                 var additionalModalFrameProgress: CGFloat
                 if visibleModalCount == 1 {
-                    effectiveRootModalDismissProgress = topModalIsFlat ? 1.0 : topModalDismissProgress
+                    effectiveRootModalDismissProgress = (topModalIsFlat || isLandscape) ? 1.0 : topModalDismissProgress
                     visibleRootModalDismissProgress = effectiveRootModalDismissProgress
                     additionalModalFrameProgress = 0.0
                 } else if visibleModalCount >= 2 {
@@ -838,7 +852,7 @@ open class NavigationController: UINavigationController, ContainableController, 
                     }
                     let maxScale: CGFloat
                     let maxOffset: CGFloat
-                    if topModalIsFlat {
+                    if topModalIsFlat || isLandscape {
                         maxScale = 1.0
                         maxOffset = 0.0
                     } else if visibleModalCount <= 1 {
@@ -1057,8 +1071,8 @@ open class NavigationController: UINavigationController, ContainableController, 
         self.setViewControllers(controllers, animated: animated)
     }
     
-    public func replaceTopController(_ controller: ViewController, animated: Bool, ready: ValuePromise<Bool>? = nil) {
-        ready?.set(true)
+    public func replaceTopController(_ controller: ViewController, animated: Bool, ready: Promise<Bool>? = nil) {
+        ready?.set(.single(true))
         var controllers = self.viewControllers
         controllers.removeLast()
         controllers.append(controller)
@@ -1219,6 +1233,35 @@ open class NavigationController: UINavigationController, ContainableController, 
                 self.updateContainers(layout: layout, transition: transition)
             }
         }
+    }
+    
+    public func updatePossibleControllerDropContent(content: NavigationControllerDropContent?) {
+        if let rootContainer = self.rootContainer {
+            switch rootContainer {
+            case let .flat(container):
+                if let controller = container.controllers.last {
+                    controller.updatePossibleControllerDropContent(content: content)
+                }
+            case .split:
+                break
+            }
+        }
+    }
+    
+    public func acceptPossibleControllerDropContent(content: NavigationControllerDropContent) -> Bool {
+        if let rootContainer = self.rootContainer {
+            switch rootContainer {
+            case let .flat(container):
+                if let controller = container.controllers.last {
+                    if controller.acceptPossibleControllerDropContent(content: content) {
+                        return true
+                    }
+                }
+            case .split:
+                break
+            }
+        }
+        return false
     }
     
     override open func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {

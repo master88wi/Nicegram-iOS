@@ -63,7 +63,7 @@ public func tagsForStoreMessage(incoming: Bool, attributes: [MessageAttribute], 
                 }
             }
             if isAnimated {
-                refinedTag = nil
+                refinedTag = .gif
             }
             if file.isAnimatedSticker {
                 refinedTag = nil
@@ -75,7 +75,7 @@ public func tagsForStoreMessage(incoming: Bool, attributes: [MessageAttribute], 
             tags.insert(.webPage)
         } else if let action = attachment as? TelegramMediaAction {
             switch action.action {
-                case let .phoneCall(_, discardReason, _):
+                case let .phoneCall(_, discardReason, _, _):
                     globalTags.insert(.Calls)
                     if incoming, let discardReason = discardReason, case .missed = discardReason {
                         globalTags.insert(.MissedCalls)
@@ -520,6 +520,10 @@ extension StoreMessage {
                 if let views = views, namespace != Namespaces.Message.ScheduledCloud {
                     attributes.append(ViewCountMessageAttribute(count: Int(views)))
                 }
+                
+                /*if let forwards = forwards, namespace != Namespaces.Message.ScheduledCloud {
+                    attributes.append(ForwardCountMessageAttribute(count: Int(forwards)))
+                }*/
                 
                 if let editDate = editDate {
                     attributes.append(EditedMessageAttribute(date: editDate, isHidden: (flags & (1 << 21)) != 0))

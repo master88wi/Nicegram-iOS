@@ -214,6 +214,8 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
     private var tapRecognizer: TapLongTapOrDoubleTapGestureRecognizer?
     private var reactionRecognizer: ReactionSwipeGestureRecognizer?
     
+    private var currentSwipeAction: ChatControllerInteractionSwipeAction?
+    
     override var visibility: ListViewItemNodeVisibility {
         didSet {
             if self.visibility != oldValue {
@@ -496,20 +498,25 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                             return false
                         }
                         else if let media = media as? TelegramMediaAction {
-                            if case .phoneCall(_, _, _) = media.action {
-                                
+                            if case .phoneCall(_, _, _, _) = media.action {
                             } else {
                                 return false
                             }
                         }
                     }
-                    return item.controllerInteraction.canSetupReply(item.message)
+                    let action = item.controllerInteraction.canSetupReply(item.message)
+                    strongSelf.currentSwipeAction = action
+                    if case .none = action {
+                        return false
+                    } else {
+                        return true
+                    }
                 }
                 return false
             }
             self.view.addGestureRecognizer(replyRecognizer)
         } else {
-            let reactionRecognizer = ReactionSwipeGestureRecognizer(target: nil, action: nil)
+            /*let reactionRecognizer = ReactionSwipeGestureRecognizer(target: nil, action: nil)
             self.reactionRecognizer = reactionRecognizer
             reactionRecognizer.availableReactions = { [weak self] in
                 guard let strongSelf = self, let item = strongSelf.item, !item.presentationData.isPreview && !Namespaces.Message.allScheduled.contains(item.message.id.namespace) else {
@@ -704,7 +711,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                     }
                 }
             }
-            self.view.addGestureRecognizer(reactionRecognizer)
+            self.view.addGestureRecognizer(reactionRecognizer)*/
         }
     }
     
@@ -2289,7 +2296,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
             }
             
             strongSelf.awaitingAppliedReaction = nil
-            var targetNode: ASDisplayNode?
+            /*var targetNode: ASDisplayNode?
             var hideTarget = false
             if let awaitingAppliedReaction = awaitingAppliedReaction {
                 for contentNode in strongSelf.contentNodes {
@@ -2300,7 +2307,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                     }
                 }
             }
-            strongSelf.reactionRecognizer?.complete(into: targetNode, hideTarget: hideTarget)
+            strongSelf.reactionRecognizer?.complete(into: targetNode, hideTarget: hideTarget)*/
             f()
         }
     }
@@ -2527,7 +2534,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                             var navigate: ChatControllerInteractionNavigateToPeer
                             
                             if item.content.firstMessage.id.peerId == item.context.account.peerId {
-                                navigate = .chat(textInputState: nil, subject: nil)
+                                navigate = .chat(textInputState: nil, subject: nil, peekData: nil)
                             } else {
                                 navigate = .info
                             }
@@ -2535,7 +2542,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                             for attribute in item.content.firstMessage.attributes {
                                 if let attribute = attribute as? SourceReferenceMessageAttribute {
                                     openPeerId = attribute.messageId.peerId
-                                    navigate = .chat(textInputState: nil, subject: .message(attribute.messageId))
+                                    navigate = .chat(textInputState: nil, subject: .message(attribute.messageId), peekData: nil)
                                 }
                             }
                             
@@ -2643,7 +2650,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                         })
                     case let .peerMention(peerId, _):
                         return .action({
-                            self.item?.controllerInteraction.openPeer(peerId, .chat(textInputState: nil, subject: nil), nil)
+                            self.item?.controllerInteraction.openPeer(peerId, .chat(textInputState: nil, subject: nil, peekData: nil), nil)
                         })
                     case let .textMention(name):
                         return .action({
@@ -2677,9 +2684,9 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                                 item.controllerInteraction.openTheme(item.message)
                             })
                         }
-                    case let .call(peerId):
+                    case let .call(peerId, isVideo):
                         return .optionalAction({
-                            self.item?.controllerInteraction.callPeer(peerId)
+                            self.item?.controllerInteraction.callPeer(peerId, isVideo)
                         })
                     case .openMessage:
                         if let item = self.item {
@@ -2854,7 +2861,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         }
         
         if let avatarNode = self.accessoryItemNode as? ChatMessageAvatarAccessoryItemNode, avatarNode.frame.contains(point) {
-            return self.view
+            return avatarNode.containerNode.view
         }
         
         if !self.backgroundNode.frame.contains(point) {
@@ -3193,7 +3200,7 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                     if translation.x < -45.0, self.swipeToReplyNode == nil, let item = self.item {
                         self.swipeToReplyFeedback?.impact()
 
-                        let swipeToReplyNode = ChatMessageSwipeToReplyNode(fillColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonFillColor, wallpaper: item.presentationData.theme.wallpaper), strokeColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonStrokeColor, wallpaper: item.presentationData.theme.wallpaper), foregroundColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonForegroundColor, wallpaper: item.presentationData.theme.wallpaper))
+                        let swipeToReplyNode = ChatMessageSwipeToReplyNode(fillColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonFillColor, wallpaper: item.presentationData.theme.wallpaper), strokeColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonStrokeColor, wallpaper: item.presentationData.theme.wallpaper), foregroundColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonForegroundColor, wallpaper: item.presentationData.theme.wallpaper), action: ChatMessageSwipeToReplyNode.Action(self.currentSwipeAction))
                         self.swipeToReplyNode = swipeToReplyNode
                         self.insertSubnode(swipeToReplyNode, belowSubnode: self.messageAccessibilityArea)
                         animateReplyNodeIn = true
@@ -3222,7 +3229,18 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
                 let translation = recognizer.translation(in: self.view)
                 if case .ended = recognizer.state, translation.x < -45.0 {
                     if let item = self.item {
-                        item.controllerInteraction.setupReply(item.message.id)
+                        if let currentSwipeAction = currentSwipeAction {
+                            switch currentSwipeAction {
+                            case .none:
+                                break
+                            case .reply:
+                                item.controllerInteraction.setupReply(item.message.id)
+                            case .like:
+                                item.controllerInteraction.updateMessageLike(item.message.id, true)
+                            case .unlike:
+                                item.controllerInteraction.updateMessageLike(item.message.id, false)
+                            }
+                        }
                     }
                 }
                 var bounds = self.bounds
@@ -3285,10 +3303,10 @@ class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePrevewItemNode 
         self.contextSourceNode.contentNode.addSubnode(accessoryItemNode)
     }
     
-    override func targetReactionNode(value: String) -> (ASDisplayNode, Int)? {
+    override func targetReactionNode(value: String) -> (ASDisplayNode, ASDisplayNode)? {
         for contentNode in self.contentNodes {
-            if let (reactionNode, count) = contentNode.reactionTargetNode(value: value) {
-                return (reactionNode, count)
+            if let (emptyNode, filledNode) = contentNode.reactionTargetNode(value: value) {
+                return (emptyNode, filledNode)
             }
         }
         return nil

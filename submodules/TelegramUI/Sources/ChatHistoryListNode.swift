@@ -458,6 +458,7 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
     private let galleryHiddenMesageAndMediaDisposable = MetaDisposable()
     
     private let messageProcessingManager = ChatMessageThrottledProcessingManager()
+    private let messageReactionsProcessingManager = ChatMessageThrottledProcessingManager()
     private let seenLiveLocationProcessingManager = ChatMessageThrottledProcessingManager()
     private let unsupportedMessageProcessingManager = ChatMessageThrottledProcessingManager()
     private let messageMentionProcessingManager = ChatMessageThrottledProcessingManager(delay: 0.2)
@@ -534,6 +535,9 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
         
         self.messageProcessingManager.process = { [weak context] messageIds in
             context?.account.viewTracker.updateViewCountForMessageIds(messageIds: messageIds)
+        }
+        self.messageReactionsProcessingManager.process = { [weak context] messageIds in
+            context?.account.viewTracker.updateReactionsForMessageIds(messageIds: messageIds)
         }
         self.seenLiveLocationProcessingManager.process = { [weak context] messageIds in
             context?.account.viewTracker.updateSeenLiveLocationForMessageIds(messageIds: messageIds)
@@ -988,6 +992,7 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
             let toLaterRange = (historyView.filteredEntries.count - 1 - (visible.firstIndex - 1), historyView.filteredEntries.count - 1)
             
             var messageIdsWithViewCount: [MessageId] = []
+            var messageIdsWithUpdateableReactions: [MessageId] = []
             var messageIdsWithLiveLocation: [MessageId] = []
             var messageIdsWithUnsupportedMedia: [MessageId] = []
             var messageIdsWithUnseenPersonalMention: [MessageId] = []
@@ -1019,6 +1024,7 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
                                 contentRequiredValidation = true
                             }
                         }
+                        var isAction = false
                         for media in message.media {
                             if let _ = media as? TelegramMediaUnsupported {
                                 contentRequiredValidation = true
@@ -1027,7 +1033,12 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
                                 if message.timestamp + liveBroadcastingTimeout > timestamp {
                                     messageIdsWithLiveLocation.append(message.id)
                                 }
+                            } else if let _ = media as? TelegramMediaAction {
+                                isAction = true
                             }
+                        }
+                        if !isAction && message.id.peerId.namespace == Namespaces.Peer.CloudChannel {
+                            messageIdsWithUpdateableReactions.append(message.id)
                         }
                         if contentRequiredValidation {
                             messageIdsWithUnsupportedMedia.append(message.id)
@@ -1130,6 +1141,9 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
             
             if !messageIdsWithViewCount.isEmpty {
                 self.messageProcessingManager.add(messageIdsWithViewCount)
+            }
+            if !messageIdsWithUpdateableReactions.isEmpty {
+                self.messageReactionsProcessingManager.add(messageIdsWithUpdateableReactions)
             }
             if !messageIdsWithLiveLocation.isEmpty {
                 self.seenLiveLocationProcessingManager.add(messageIdsWithLiveLocation)
@@ -1425,7 +1439,13 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
                     loadState = .loading
                 }
                 
+                var animateIn = false
                 if strongSelf.loadState != loadState {
+                    if case .loading = strongSelf.loadState {
+                        if case .messages = loadState {
+                            animateIn = true
+                        }
+                    }
                     strongSelf.loadState = loadState
                     strongSelf.loadStateUpdated?(loadState, animated)
                 }
@@ -1468,9 +1488,25 @@ public final class ChatHistoryListNode: ListView, ChatHistoryNode {
                     strongSelf._buttonKeyboardMessage.set(.single(transition.keyboardButtonsMessage))
                 }
                 
-                if transition.animateIn {
-                    strongSelf.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.25)
-                }
+                /*if transition.animateIn || animateIn {
+                    let heightNorm = strongSelf.bounds.height - strongSelf.insets.top
+                    strongSelf.forEachVisibleItemNode { itemNode in
+                        if let itemNode = itemNode as? ChatMessageItemView {
+                            let delayFactor = itemNode.frame.minY / heightNorm
+                            let delay = Double(delayFactor * 0.1)
+                            
+                            itemNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15, delay: delay)
+                            itemNode.layer.animateScale(from: 0.9, to: 1.0, duration: 0.4, delay: delay, timingFunction: kCAMediaTimingFunctionSpring)
+                        }
+                    }
+                    strongSelf.forEachItemHeaderNode { itemNode in
+                        let delayFactor = itemNode.frame.minY / heightNorm
+                        let delay = Double(delayFactor * 0.2)
+                        
+                        itemNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15, delay: delay)
+                        itemNode.layer.animateScale(from: 0.9, to: 1.0, duration: 0.4, delay: delay, timingFunction: kCAMediaTimingFunctionSpring)
+                    }
+                }*/
                 
                 if let scrolledToIndex = transition.scrolledToIndex {
                     if let strongSelf = self {

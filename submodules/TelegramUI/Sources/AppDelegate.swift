@@ -142,6 +142,14 @@ protocol SupportedStartCallIntent {
 @available(iOS 10.0, *)
 extension INStartAudioCallIntent: SupportedStartCallIntent {}
 
+protocol SupportedStartVideoCallIntent {
+    @available(iOS 10.0, *)
+    var contacts: [INPerson]? { get }
+}
+
+@available(iOS 10.0, *)
+extension INStartVideoCallIntent: SupportedStartVideoCallIntent {}
+
 private enum QueuedWakeup: Int32 {
     case call
     case backgroundLocation
@@ -394,7 +402,9 @@ final class SharedApplicationContext {
             }
         }
         
-        let networkArguments = NetworkInitializationArguments(apiId: apiId, apiHash: apiHash, languagesCategory: languagesCategory, appVersion: appVersion, voipMaxLayer: PresentationCallManagerImpl.voipMaxLayer, voipVersions: PresentationCallManagerImpl.voipVersions, appData: self.deviceToken.get()
+        let networkArguments = NetworkInitializationArguments(apiId: apiId, apiHash: apiHash, languagesCategory: languagesCategory, appVersion: appVersion, voipMaxLayer: PresentationCallManagerImpl.voipMaxLayer, voipVersions: PresentationCallManagerImpl.voipVersions(includeExperimental: true, includeReference: false).map { version, supportsVideo -> CallSessionManagerImplementationVersion in
+            CallSessionManagerImplementationVersion(version: version, supportsVideo: supportsVideo)
+        }, appData: self.deviceToken.get()
         |> map { token in
             let data = buildConfig.bundleData(withAppToken: token, signatureDict: signatureDict)
             if let data = data, let jsonString = String(data: data, encoding: .utf8) {
@@ -983,7 +993,7 @@ final class SharedApplicationContext {
                 }
                 return true
             })
-            |> mapToSignal { account -> Signal<(Account, LimitsConfiguration, CallListSettings, ContentSettings)?, NoError> in
+            |> mapToSignal { account -> Signal<(Account, LimitsConfiguration, CallListSettings, ContentSettings, AppConfiguration)?, NoError> in
                 return sharedApplicationContext.sharedContext.accountManager.transaction { transaction -> CallListSettings? in
                     return transaction.getSharedData(ApplicationSpecificSharedDataKeys.callListSettings) as? CallListSettings
                 }
@@ -996,12 +1006,13 @@ final class SharedApplicationContext {
                     }
                     return result
                 }
-                |> mapToSignal { callListSettings -> Signal<(Account, LimitsConfiguration, CallListSettings, ContentSettings)?, NoError> in
+                |> mapToSignal { callListSettings -> Signal<(Account, LimitsConfiguration, CallListSettings, ContentSettings, AppConfiguration)?, NoError> in
                     if let account = account {
-                        return account.postbox.transaction { transaction -> (Account, LimitsConfiguration, CallListSettings, ContentSettings)? in
+                        return account.postbox.transaction { transaction -> (Account, LimitsConfiguration, CallListSettings, ContentSettings, AppConfiguration)? in
                             let limitsConfiguration = transaction.getPreferencesEntry(key: PreferencesKeys.limitsConfiguration) as? LimitsConfiguration ?? LimitsConfiguration.defaultValue
                             let contentSettings = getContentSettings(transaction: transaction)
-                            return (account, limitsConfiguration, callListSettings ?? CallListSettings.defaultSettings, contentSettings)
+                            let appConfiguration = getAppConfiguration(transaction: transaction)
+                            return (account, limitsConfiguration, callListSettings ?? CallListSettings.defaultSettings, contentSettings, appConfiguration)
                         }
                     } else {
                         return .single(nil)
@@ -1010,11 +1021,8 @@ final class SharedApplicationContext {
             }
             |> deliverOnMainQueue
             |> map { accountAndSettings -> AuthorizedApplicationContext? in
-                return accountAndSettings.flatMap { account, limitsConfiguration, callListSettings, contentSettings in
-                    #if ENABLE_WALLET
-                    let tonContext = StoredTonContext(basePath: account.basePath, postbox: account.postbox, network: account.network, keychain: tonKeychain)
-                    #endif
-                    let context = AccountContextImpl(sharedContext: sharedApplicationContext.sharedContext, account: account/*, tonContext: tonContext*/, limitsConfiguration: limitsConfiguration, contentSettings: contentSettings)
+                return accountAndSettings.flatMap { account, limitsConfiguration, callListSettings, contentSettings, appConfiguration in
+                    let context = AccountContextImpl(sharedContext: sharedApplicationContext.sharedContext, account: account, limitsConfiguration: limitsConfiguration, contentSettings: contentSettings, appConfiguration: appConfiguration)
                     return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, watchManagerArguments: watchManagerArgumentsPromise.get(), context: context, accountManager: sharedApplicationContext.sharedContext.accountManager, showCallsTab: callListSettings.showTab, reinitializedNotificationSettings: {
                         let _ = (self.context.get()
                         |> take(1)
@@ -1180,8 +1188,6 @@ final class SharedApplicationContext {
                     self.registerForNotifications(context: context.context, authorize: authorizeNotifications)
                     
                     self.resetIntentsIfNeeded(context: context.context)
-                    
-                    let _ = storeCurrentCallListTabDefaultValue(accountManager: context.context.sharedContext.accountManager).start()
                 }))
             } else {
                 self.mainWindow.viewController = nil
@@ -1742,12 +1748,19 @@ final class SharedApplicationContext {
     
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
         if #available(iOS 10.0, *) {
+            var startCallContacts: [INPerson]?
+            var startCallIsVideo = false
             if let startCallIntent = userActivity.interaction?.intent as? SupportedStartCallIntent {
-                guard let context = self.contextValue?.context else {
-                    return true
-                }
+                startCallContacts = startCallIntent.contacts
+                startCallIsVideo = false
+            } else if let startCallIntent = userActivity.interaction?.intent as? SupportedStartVideoCallIntent {
+                startCallContacts = startCallIntent.contacts
+                startCallIsVideo = true
+            }
+            
+            if let startCallContacts = startCallContacts {
                 let startCall: (Int32) -> Void = { userId in
-                    let _ = context.sharedContext.callManager?.requestCall(account: context.account, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: userId), endCurrentIfAny: false)
+                    self.startCallWhenReady(accountId: nil, peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: userId), isVideo: startCallIsVideo)
                 }
                 
                 func cleanPhoneNumber(_ text: String) -> String {
@@ -1774,7 +1787,7 @@ final class SharedApplicationContext {
                     }
                 }
                 
-                if let contact = startCallIntent.contacts?.first {
+                if let contact = startCallContacts.first {
                     var processed = false
                     if let handle = contact.customIdentifier, handle.hasPrefix("tg") {
                         let string = handle.suffix(from: handle.index(handle.startIndex, offsetBy: 2))
@@ -1793,6 +1806,9 @@ final class SharedApplicationContext {
                             case .phoneNumber:
                                 let phoneNumber = cleanPhoneNumber(value)
                                 if !phoneNumber.isEmpty {
+                                    guard let context = self.contextValue?.context else {
+                                        return true
+                                    }
                                     let _ = (context.account.postbox.transaction { transaction -> PeerId? in
                                         var result: PeerId?
                                         for peerId in transaction.getContactPeerIds() {
@@ -1924,11 +1940,33 @@ final class SharedApplicationContext {
     }
     
     private func openNotificationSettingsWhenReady() {
-        let signal = (self.authorizedContext()
+        let _ = (self.authorizedContext()
         |> take(1)
         |> deliverOnMainQueue).start(next: { context in
             context.openNotificationSettings()
         })
+    }
+    
+    private func startCallWhenReady(accountId: AccountRecordId?, peerId: PeerId, isVideo: Bool) {
+        let signal = self.sharedContextPromise.get()
+        |> take(1)
+        |> mapToSignal { sharedApplicationContext -> Signal<AuthorizedApplicationContext, NoError> in
+            if let accountId = accountId {
+                sharedApplicationContext.sharedContext.switchToAccount(id: accountId)
+                return self.authorizedContext()
+                |> filter { context in
+                    context.context.account.id == accountId
+                }
+                |> take(1)
+            } else {
+                return self.authorizedContext()
+                |> take(1)
+            }
+        }
+        self.openChatWhenReadyDisposable.set((signal
+        |> deliverOnMainQueue).start(next: { context in
+            context.startCall(peerId: peerId, isVideo: isVideo)
+        }))
     }
     
     private func openChatWhenReady(accountId: AccountRecordId?, peerId: PeerId, messageId: MessageId? = nil, activateInput: Bool = false) {

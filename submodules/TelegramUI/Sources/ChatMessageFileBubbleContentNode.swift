@@ -11,6 +11,22 @@ import TelegramUIPreferences
 class ChatMessageFileBubbleContentNode: ChatMessageBubbleContentNode {
     private let interactiveFileNode: ChatMessageInteractiveFileNode
     
+    override var visibility: ListViewItemNodeVisibility {
+        didSet {
+            var wasVisible = false
+            if case .visible = oldValue {
+                wasVisible = true
+            }
+            var isVisible = false
+            if case .visible = self.visibility {
+                isVisible = true
+            }
+            if wasVisible != isVisible {
+                self.interactiveFileNode.visibility = isVisible
+            }
+        }
+    }
+    
     required init() {
         self.interactiveFileNode = ChatMessageInteractiveFileNode()
         
@@ -119,7 +135,7 @@ class ChatMessageFileBubbleContentNode: ChatMessageBubbleContentNode {
         self.interactiveFileNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false)
     }
     
-    override func reactionTargetNode(value: String) -> (ASDisplayNode, Int)? {
+    override func reactionTargetNode(value: String) -> (ASDisplayNode, ASDisplayNode)? {
         return self.interactiveFileNode.reactionTargetNode(value: value)
     }
 }

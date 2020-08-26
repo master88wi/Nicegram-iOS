@@ -39,6 +39,10 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
     private var animationNode: GenericAnimatedStickerNode?
     private var didSetUpAnimationNode = false
     private var isPlaying = false
+    private var animateGreeting = false
+    private weak var greetingStickerParentNode: ASDisplayNode?
+    private weak var greetingStickerListNode: ASDisplayNode?
+    private var greetingCompletion: (() -> Void)?
     
     private var swipeToReplyNode: ChatMessageSwipeToReplyNode?
     private var swipeToReplyFeedback: HapticFeedback?
@@ -69,6 +73,8 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
     private var currentSwipeToReplyTranslation: CGFloat = 0.0
     
     private var appliedForwardInfo: (Peer?, String?)?
+    
+    private var currentSwipeAction: ChatControllerInteractionSwipeAction?
     
     required init() {
         self.contextSourceNode = ContextExtractedContentContainingNode()
@@ -122,6 +128,13 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
         self.addSubnode(self.containerNode)
         self.contextSourceNode.contentNode.addSubnode(self.imageNode)
         self.contextSourceNode.contentNode.addSubnode(self.dateAndStatusNode)
+        
+        self.dateAndStatusNode.openReactions = { [weak self] in
+            guard let strongSelf = self, let item = strongSelf.item else {
+                return
+            }
+            item.controllerInteraction.openMessageReactions(item.message.id)
+        }
     }
     
     deinit {
@@ -176,7 +189,13 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                 if strongSelf.selectionNode != nil {
                     return false
                 }
-                return item.controllerInteraction.canSetupReply(item.message)
+                let action = item.controllerInteraction.canSetupReply(item.message)
+                strongSelf.currentSwipeAction = action
+                if case .none = action {
+                    return false
+                } else {
+                    return true
+                }
             }
             return false
         }
@@ -209,7 +228,7 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
         }
         
         if let telegramDice = self.telegramDice {
-            let animationNode = ManagedDiceAnimationNode(context: item.context, emoji: telegramDice.emoji)
+            let animationNode = ManagedDiceAnimationNode(context: item.context, emoji: telegramDice.emoji.strippedEmoji)
             if !item.message.effectivelyIncoming(item.context.account.peerId) {
                 animationNode.success = { [weak self] in
                     if let strongSelf = self, let item = strongSelf.item {
@@ -219,22 +238,34 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             }
             self.animationNode = animationNode
         } else {
-            let animationNode = AnimatedStickerNode()
-            animationNode.started = { [weak self] in
-                if let strongSelf = self {
-                    strongSelf.imageNode.alpha = 0.0
-                    
-                    if let item = strongSelf.item {
-                        if let _ = strongSelf.emojiFile {
-                            item.controllerInteraction.seenOneTimeAnimatedMedia.insert(item.message.id)
+            let animationNode: AnimatedStickerNode
+            if let (node, parentNode, listNode, greetingCompletion)  = item.controllerInteraction.greetingStickerNode(), let greetingStickerNode = node as? AnimatedStickerNode {
+                animationNode = greetingStickerNode
+                self.imageNode.alpha = 0.0
+                self.animateGreeting = true
+                self.greetingStickerParentNode = parentNode
+                self.greetingStickerListNode = listNode
+                self.greetingCompletion = greetingCompletion
+                self.dateAndStatusNode.alpha = 0.0
+            } else {
+                animationNode = AnimatedStickerNode()
+                animationNode.started = { [weak self] in
+                    if let strongSelf = self {
+                        strongSelf.imageNode.alpha = 0.0
+                        
+                        if let item = strongSelf.item {
+                            if let _ = strongSelf.emojiFile {
+                                item.controllerInteraction.seenOneTimeAnimatedMedia.insert(item.message.id)
+                            }
                         }
                     }
                 }
             }
+            
             self.animationNode = animationNode
         }
         
-        if let animationNode = self.animationNode {
+        if let animationNode = self.animationNode, !self.animateGreeting {
             self.contextSourceNode.contentNode.insertSubnode(animationNode, aboveSubnode: self.imageNode)
         }
     }
@@ -346,12 +377,10 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     if let file = file {
                         let dimensions = file.dimensions ?? PixelDimensions(width: 512, height: 512)
                         let fittedSize = isEmoji ? dimensions.cgSize.aspectFilled(CGSize(width: 384.0, height: 384.0)) : dimensions.cgSize.aspectFitted(CGSize(width: 384.0, height: 384.0))
-                        let mode: AnimatedStickerMode
-                        if file.resource is LocalFileReferenceMediaResource {
-                            mode = .direct
-                        } else {
-                            mode = .cached
-                        }
+                        
+                        let pathPrefix = item.context.account.postbox.mediaBox.shortLivedResourceCachePathPrefix(file.resource.id)
+                        let mode: AnimatedStickerMode = .direct(cachePathPrefix: pathPrefix)
+                        
                         animationNode.setup(source: AnimatedStickerResourceSource(account: item.context.account, resource: file.resource, fitzModifier: fitzModifier), width: Int(fittedSize.width), height: Int(fittedSize.height), playbackMode: playbackMode, mode: mode)
                     }
                 }
@@ -730,8 +759,43 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     }
                     
                     strongSelf.imageNode.frame = updatedContentFrame
-                    strongSelf.animationNode?.frame = updatedContentFrame.insetBy(dx: imageInset, dy: imageInset)
-                    if let animationNode = strongSelf.animationNode as? AnimatedStickerNode {
+                    
+                    let animationNodeFrame = updatedContentFrame.insetBy(dx: imageInset, dy: imageInset)
+                    if let animationNode = strongSelf.animationNode, let parentNode = strongSelf.greetingStickerParentNode, strongSelf.animateGreeting {
+                        strongSelf.animateGreeting = false
+                        
+                        let initialFrame = animationNode.view.convert(animationNode.bounds, to: parentNode.view)
+                        parentNode.addSubnode(animationNode)
+                        animationNode.frame = initialFrame
+                        
+                        var targetPosition = initialFrame.center.y
+                        if let listNode = strongSelf.greetingStickerListNode as? ListView {
+                            targetPosition = listNode.frame.height - listNode.insets.top - animationNodeFrame.height / 2.0 - 12.0
+                        }
+                        
+                        let targetScale = animationNodeFrame.width / initialFrame.width
+                        animationNode.layer.animateScale(from: 1.0, to: targetScale, duration: 0.3, removeOnCompletion: false)
+                        animationNode.layer.animatePosition(from: initialFrame.center, to: CGPoint(x: animationNodeFrame.midX, y: targetPosition), duration: 0.4, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { [weak self] finished in
+                            if let strongSelf = self {
+                                animationNode.layer.removeAllAnimations()
+                                strongSelf.animationNode?.frame = animationNodeFrame
+                                strongSelf.contextSourceNode.contentNode.insertSubnode(animationNode, aboveSubnode: strongSelf.imageNode)
+                                
+                                if let animationNode = strongSelf.animationNode as? AnimatedStickerNode {
+                                    animationNode.updateLayout(size: updatedContentFrame.insetBy(dx: imageInset, dy: imageInset).size)
+                                }
+                                
+                                strongSelf.dateAndStatusNode.alpha = 1.0
+                                strongSelf.dateAndStatusNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                                
+                                strongSelf.greetingCompletion?()
+                            }
+                        })
+                        
+                    } else if strongSelf.animationNode?.supernode === strongSelf.contextSourceNode.contentNode {
+                        strongSelf.animationNode?.frame = animationNodeFrame
+                    }
+                    if let animationNode = strongSelf.animationNode as? AnimatedStickerNode, strongSelf.animationNode?.supernode === strongSelf.contextSourceNode.contentNode {
                         animationNode.updateLayout(size: updatedContentFrame.insetBy(dx: imageInset, dy: imageInset).size)
                     }
                     imageApply()
@@ -947,7 +1011,7 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                         var navigate: ChatControllerInteractionNavigateToPeer
                         
                         if item.content.firstMessage.id.peerId == item.context.account.peerId {
-                            navigate = .chat(textInputState: nil, subject: nil)
+                            navigate = .chat(textInputState: nil, subject: nil, peekData: nil)
                         } else {
                             navigate = .info
                         }
@@ -955,7 +1019,7 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                         for attribute in item.content.firstMessage.attributes {
                             if let attribute = attribute as? SourceReferenceMessageAttribute {
                                 openPeerId = attribute.messageId.peerId
-                                navigate = .chat(textInputState: nil, subject: .message(attribute.messageId))
+                                navigate = .chat(textInputState: nil, subject: .message(attribute.messageId), peekData: nil)
                             }
                         }
                         
@@ -1103,7 +1167,7 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                 if translation.x < -45.0, self.swipeToReplyNode == nil, let item = self.item {
                     self.swipeToReplyFeedback?.impact()
                     
-                    let swipeToReplyNode = ChatMessageSwipeToReplyNode(fillColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonFillColor, wallpaper: item.presentationData.theme.wallpaper), strokeColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonStrokeColor, wallpaper: item.presentationData.theme.wallpaper), foregroundColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonForegroundColor, wallpaper: item.presentationData.theme.wallpaper))
+                    let swipeToReplyNode = ChatMessageSwipeToReplyNode(fillColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonFillColor, wallpaper: item.presentationData.theme.wallpaper), strokeColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonStrokeColor, wallpaper: item.presentationData.theme.wallpaper), foregroundColor: bubbleVariableColor(variableColor: item.presentationData.theme.theme.chat.message.shareButtonForegroundColor, wallpaper: item.presentationData.theme.wallpaper), action: ChatMessageSwipeToReplyNode.Action(self.currentSwipeAction))
                     self.swipeToReplyNode = swipeToReplyNode
                     self.addSubnode(swipeToReplyNode)
                     animateReplyNodeIn = true
@@ -1129,7 +1193,18 @@ class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             let translation = recognizer.translation(in: self.view)
             if case .ended = recognizer.state, translation.x < -45.0 {
                 if let item = self.item {
-                    item.controllerInteraction.setupReply(item.message.id)
+                    if let currentSwipeAction = currentSwipeAction {
+                        switch currentSwipeAction {
+                        case .none:
+                            break
+                        case .reply:
+                            item.controllerInteraction.setupReply(item.message.id)
+                        case .like:
+                            item.controllerInteraction.updateMessageLike(item.message.id, true)
+                        case .unlike:
+                            item.controllerInteraction.updateMessageLike(item.message.id, true)
+                        }
+                    }
                 }
             }
             var bounds = self.bounds

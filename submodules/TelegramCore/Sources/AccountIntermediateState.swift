@@ -94,10 +94,12 @@ enum AccountStateMutationOperation {
     case UpdatePinnedItemIds(PeerGroupId, AccountStateUpdatePinnedItemIdsOperation)
     case ReadMessageContents((PeerId?, [Int32]))
     case UpdateMessageImpressionCount(MessageId, Int32)
+    case UpdateMessageForwardsCount(MessageId, Int32)
     case UpdateInstalledStickerPacks(AccountStateUpdateStickerPacksOperation)
     case UpdateRecentGifs
     case UpdateChatInputState(PeerId, SynchronizeableChatInputState?)
     case UpdateCall(Api.PhoneCall)
+    case AddCallSignalingData(Int64, Data)
     case UpdateLangPack(String, Api.LangPackDifference?)
     case UpdateMinAvailableMessage(MessageId)
     case UpdatePeerChatInclusion(peerId: PeerId, groupId: PeerGroupId, changedGroup: Bool)
@@ -106,6 +108,22 @@ enum AccountStateMutationOperation {
     case SyncChatListFilters
     case UpdateChatListFilterOrder(order: [Int32])
     case UpdateChatListFilter(id: Int32, filter: Api.DialogFilter?)
+}
+
+struct HoleFromPreviousState {
+    var validateChannelPts: Int32?
+    
+    func mergedWith(_ other: HoleFromPreviousState) -> HoleFromPreviousState {
+        var result = self
+        if let pts = self.validateChannelPts, let otherPts = other.validateChannelPts {
+            result.validateChannelPts = max(pts, otherPts)
+        } else if let pts = self.validateChannelPts {
+            result.validateChannelPts = pts
+        } else if let otherPts = other.validateChannelPts {
+            result.validateChannelPts = otherPts
+        }
+        return result
+    }
 }
 
 struct AccountMutableState {
@@ -121,7 +139,7 @@ struct AccountMutableState {
     var referencedMessageIds: Set<MessageId>
     var storedMessages: Set<MessageId>
     var readInboxMaxIds: [PeerId: MessageId]
-    var namespacesWithHolesFromPreviousState: [PeerId: Set<MessageId.Namespace>]
+    var namespacesWithHolesFromPreviousState: [PeerId: [MessageId.Namespace: HoleFromPreviousState]]
     var updatedOutgoingUniqueMessageIds: [Int64: Int32]
     
     var storedMessagesByPeerIdAndTimestamp: [PeerId: Set<MessageIndex>]
@@ -153,7 +171,7 @@ struct AccountMutableState {
         self.updatedOutgoingUniqueMessageIds = [:]
     }
     
-    init(initialState: AccountInitialState, operations: [AccountStateMutationOperation], state: AuthorizedAccountState.State, peers: [PeerId: Peer], channelStates: [PeerId: AccountStateChannelState], peerChatInfos: [PeerId: PeerChatInfo], referencedMessageIds: Set<MessageId>, storedMessages: Set<MessageId>, readInboxMaxIds: [PeerId: MessageId], storedMessagesByPeerIdAndTimestamp: [PeerId: Set<MessageIndex>], namespacesWithHolesFromPreviousState: [PeerId: Set<MessageId.Namespace>], updatedOutgoingUniqueMessageIds: [Int64: Int32], displayAlerts: [(text: String, isDropAuth: Bool)], branchOperationIndex: Int) {
+    init(initialState: AccountInitialState, operations: [AccountStateMutationOperation], state: AuthorizedAccountState.State, peers: [PeerId: Peer], channelStates: [PeerId: AccountStateChannelState], peerChatInfos: [PeerId: PeerChatInfo], referencedMessageIds: Set<MessageId>, storedMessages: Set<MessageId>, readInboxMaxIds: [PeerId: MessageId], storedMessagesByPeerIdAndTimestamp: [PeerId: Set<MessageIndex>], namespacesWithHolesFromPreviousState: [PeerId: [MessageId.Namespace: HoleFromPreviousState]], updatedOutgoingUniqueMessageIds: [Int64: Int32], displayAlerts: [(text: String, isDropAuth: Bool)], branchOperationIndex: Int) {
         self.initialState = initialState
         self.operations = operations
         self.state = state
@@ -186,10 +204,14 @@ struct AccountMutableState {
         self.externallyUpdatedPeerId.formUnion(other.externallyUpdatedPeerId)
         for (peerId, namespaces) in other.namespacesWithHolesFromPreviousState {
             if self.namespacesWithHolesFromPreviousState[peerId] == nil {
-                self.namespacesWithHolesFromPreviousState[peerId] = Set()
+                self.namespacesWithHolesFromPreviousState[peerId] = [:]
             }
-            for namespace in namespaces {
-                self.namespacesWithHolesFromPreviousState[peerId]!.insert(namespace)
+            for (namespace, namespaceState) in namespaces {
+                if self.namespacesWithHolesFromPreviousState[peerId]![namespace] == nil {
+                    self.namespacesWithHolesFromPreviousState[peerId]![namespace] = namespaceState
+                } else {
+                    self.namespacesWithHolesFromPreviousState[peerId]![namespace] = self.namespacesWithHolesFromPreviousState[peerId]![namespace]!.mergedWith(namespaceState)
+                }
             }
         }
         self.updatedOutgoingUniqueMessageIds.merge(other.updatedOutgoingUniqueMessageIds, uniquingKeysWith: { lhs, _ in lhs })
@@ -295,11 +317,16 @@ struct AccountMutableState {
         self.addOperation(.UpdateGlobalNotificationSettings(subject, notificationSettings))
     }
     
-    mutating func setNeedsHoleFromPreviousState(peerId: PeerId, namespace: MessageId.Namespace) {
+    mutating func setNeedsHoleFromPreviousState(peerId: PeerId, namespace: MessageId.Namespace, validateChannelPts: Int32?) {
         if self.namespacesWithHolesFromPreviousState[peerId] == nil {
-            self.namespacesWithHolesFromPreviousState[peerId] = Set()
+            self.namespacesWithHolesFromPreviousState[peerId] = [:]
         }
-        self.namespacesWithHolesFromPreviousState[peerId]!.insert(namespace)
+        let namespaceState = HoleFromPreviousState(validateChannelPts: validateChannelPts)
+        if self.namespacesWithHolesFromPreviousState[peerId]![namespace] == nil {
+            self.namespacesWithHolesFromPreviousState[peerId]![namespace] = namespaceState
+        } else {
+            self.namespacesWithHolesFromPreviousState[peerId]![namespace] = self.namespacesWithHolesFromPreviousState[peerId]![namespace]!.mergedWith(namespaceState)
+        }
     }
     
     mutating func mergeChats(_ chats: [Api.Chat]) {
@@ -409,6 +436,10 @@ struct AccountMutableState {
         self.addOperation(.UpdateMessageImpressionCount(id, count))
     }
     
+    mutating func addUpdateMessageForwardsCount(id: MessageId, count: Int32) {
+        self.addOperation(.UpdateMessageForwardsCount(id, count))
+    }
+    
     mutating func addUpdateInstalledStickerPacks(_ operation: AccountStateUpdateStickerPacksOperation) {
         self.addOperation(.UpdateInstalledStickerPacks(operation))
     }
@@ -425,6 +456,10 @@ struct AccountMutableState {
         self.addOperation(.UpdateCall(call))
     }
     
+    mutating func addCallSignalingData(callId: Int64, data: Data) {
+        self.addOperation(.AddCallSignalingData(callId, data))
+    }
+    
     mutating func addSyncChatListFilters() {
         self.addOperation(.SyncChatListFilters)
     }
@@ -439,7 +474,7 @@ struct AccountMutableState {
     
     mutating func addOperation(_ operation: AccountStateMutationOperation) {
         switch operation {
-            case .DeleteMessages, .DeleteMessagesWithGlobalIds, .EditMessage, .UpdateMessagePoll/*, .UpdateMessageReactions*/, .UpdateMedia, .ReadOutbox, .ReadGroupFeedInbox, .MergePeerPresences, .UpdateSecretChat, .AddSecretMessages, .ReadSecretOutbox, .AddPeerInputActivity, .UpdateCachedPeerData, .UpdatePinnedItemIds, .ReadMessageContents, .UpdateMessageImpressionCount, .UpdateInstalledStickerPacks, .UpdateRecentGifs, .UpdateChatInputState, .UpdateCall, .UpdateLangPack, .UpdateMinAvailableMessage, .UpdatePeerChatUnreadMark, .UpdateIsContact, .UpdatePeerChatInclusion, .UpdatePeersNearby, .UpdateTheme, .SyncChatListFilters, .UpdateChatListFilterOrder, .UpdateChatListFilter:
+        case .DeleteMessages, .DeleteMessagesWithGlobalIds, .EditMessage, .UpdateMessagePoll/*, .UpdateMessageReactions*/, .UpdateMedia, .ReadOutbox, .ReadGroupFeedInbox, .MergePeerPresences, .UpdateSecretChat, .AddSecretMessages, .ReadSecretOutbox, .AddPeerInputActivity, .UpdateCachedPeerData, .UpdatePinnedItemIds, .ReadMessageContents, .UpdateMessageImpressionCount, .UpdateMessageForwardsCount, .UpdateInstalledStickerPacks, .UpdateRecentGifs, .UpdateChatInputState, .UpdateCall, .AddCallSignalingData, .UpdateLangPack, .UpdateMinAvailableMessage, .UpdatePeerChatUnreadMark, .UpdateIsContact, .UpdatePeerChatInclusion, .UpdatePeersNearby, .UpdateTheme, .SyncChatListFilters, .UpdateChatListFilterOrder, .UpdateChatListFilter:
                 break
             case let .AddMessages(messages, location):
                 for message in messages {
@@ -555,6 +590,7 @@ struct AccountReplayedFinalState {
     let updatedTypingActivities: [PeerId: [PeerId: PeerInputActivity?]]
     let updatedWebpages: [MediaId: TelegramMediaWebpage]
     let updatedCalls: [Api.PhoneCall]
+    let addedCallSignalingData: [(Int64, Data)]
     let updatedPeersNearby: [PeerNearby]?
     let isContactUpdates: [(PeerId, Bool)]
     let delayNotificatonsUntil: Int32?
@@ -566,6 +602,7 @@ struct AccountFinalStateEvents {
     let updatedTypingActivities: [PeerId: [PeerId: PeerInputActivity?]]
     let updatedWebpages: [MediaId: TelegramMediaWebpage]
     let updatedCalls: [Api.PhoneCall]
+    let addedCallSignalingData: [(Int64, Data)]
     let updatedPeersNearby: [PeerNearby]?
     let isContactUpdates: [(PeerId, Bool)]
     let displayAlerts: [(text: String, isDropAuth: Bool)]
@@ -576,15 +613,16 @@ struct AccountFinalStateEvents {
     let authorizationListUpdated: Bool
     
     var isEmpty: Bool {
-        return self.addedIncomingMessageIds.isEmpty && self.wasScheduledMessageIds.isEmpty && self.updatedTypingActivities.isEmpty && self.updatedWebpages.isEmpty && self.updatedCalls.isEmpty && self.updatedPeersNearby?.isEmpty ?? true && self.isContactUpdates.isEmpty && self.displayAlerts.isEmpty && delayNotificatonsUntil == nil && self.updatedMaxMessageId == nil && self.updatedQts == nil && self.externallyUpdatedPeerId.isEmpty && !authorizationListUpdated
+        return self.addedIncomingMessageIds.isEmpty && self.wasScheduledMessageIds.isEmpty && self.updatedTypingActivities.isEmpty && self.updatedWebpages.isEmpty && self.updatedCalls.isEmpty && self.addedCallSignalingData.isEmpty && self.updatedPeersNearby?.isEmpty ?? true && self.isContactUpdates.isEmpty && self.displayAlerts.isEmpty && delayNotificatonsUntil == nil && self.updatedMaxMessageId == nil && self.updatedQts == nil && self.externallyUpdatedPeerId.isEmpty && !authorizationListUpdated
     }
     
-    init(addedIncomingMessageIds: [MessageId] = [], wasScheduledMessageIds: [MessageId] = [], updatedTypingActivities: [PeerId: [PeerId: PeerInputActivity?]] = [:], updatedWebpages: [MediaId: TelegramMediaWebpage] = [:], updatedCalls: [Api.PhoneCall] = [], updatedPeersNearby: [PeerNearby]? = nil, isContactUpdates: [(PeerId, Bool)] = [], displayAlerts: [(text: String, isDropAuth: Bool)] = [], delayNotificatonsUntil: Int32? = nil, updatedMaxMessageId: Int32? = nil, updatedQts: Int32? = nil, externallyUpdatedPeerId: Set<PeerId> = Set(), authorizationListUpdated: Bool = false) {
+    init(addedIncomingMessageIds: [MessageId] = [], wasScheduledMessageIds: [MessageId] = [], updatedTypingActivities: [PeerId: [PeerId: PeerInputActivity?]] = [:], updatedWebpages: [MediaId: TelegramMediaWebpage] = [:], updatedCalls: [Api.PhoneCall] = [], addedCallSignalingData: [(Int64, Data)] = [], updatedPeersNearby: [PeerNearby]? = nil, isContactUpdates: [(PeerId, Bool)] = [], displayAlerts: [(text: String, isDropAuth: Bool)] = [], delayNotificatonsUntil: Int32? = nil, updatedMaxMessageId: Int32? = nil, updatedQts: Int32? = nil, externallyUpdatedPeerId: Set<PeerId> = Set(), authorizationListUpdated: Bool = false) {
         self.addedIncomingMessageIds = addedIncomingMessageIds
         self.wasScheduledMessageIds = wasScheduledMessageIds
         self.updatedTypingActivities = updatedTypingActivities
         self.updatedWebpages = updatedWebpages
         self.updatedCalls = updatedCalls
+        self.addedCallSignalingData = addedCallSignalingData
         self.updatedPeersNearby = updatedPeersNearby
         self.isContactUpdates = isContactUpdates
         self.displayAlerts = displayAlerts
@@ -601,6 +639,7 @@ struct AccountFinalStateEvents {
         self.updatedTypingActivities = state.updatedTypingActivities
         self.updatedWebpages = state.updatedWebpages
         self.updatedCalls = state.updatedCalls
+        self.addedCallSignalingData = state.addedCallSignalingData
         self.updatedPeersNearby = state.updatedPeersNearby
         self.isContactUpdates = state.isContactUpdates
         self.displayAlerts = state.state.state.displayAlerts
@@ -634,6 +673,6 @@ struct AccountFinalStateEvents {
         let externallyUpdatedPeerId = self.externallyUpdatedPeerId.union(other.externallyUpdatedPeerId)
         let authorizationListUpdated = self.authorizationListUpdated || other.authorizationListUpdated
         
-        return AccountFinalStateEvents(addedIncomingMessageIds: self.addedIncomingMessageIds + other.addedIncomingMessageIds, wasScheduledMessageIds: self.wasScheduledMessageIds + other.wasScheduledMessageIds, updatedTypingActivities: self.updatedTypingActivities, updatedWebpages: self.updatedWebpages, updatedCalls: self.updatedCalls + other.updatedCalls, isContactUpdates: self.isContactUpdates + other.isContactUpdates, displayAlerts: self.displayAlerts + other.displayAlerts, delayNotificatonsUntil: delayNotificatonsUntil, updatedMaxMessageId: updatedMaxMessageId, updatedQts: updatedQts, externallyUpdatedPeerId: externallyUpdatedPeerId, authorizationListUpdated: authorizationListUpdated)
+        return AccountFinalStateEvents(addedIncomingMessageIds: self.addedIncomingMessageIds + other.addedIncomingMessageIds, wasScheduledMessageIds: self.wasScheduledMessageIds + other.wasScheduledMessageIds, updatedTypingActivities: self.updatedTypingActivities, updatedWebpages: self.updatedWebpages, updatedCalls: self.updatedCalls + other.updatedCalls, addedCallSignalingData: self.addedCallSignalingData + other.addedCallSignalingData, isContactUpdates: self.isContactUpdates + other.isContactUpdates, displayAlerts: self.displayAlerts + other.displayAlerts, delayNotificatonsUntil: delayNotificatonsUntil, updatedMaxMessageId: updatedMaxMessageId, updatedQts: updatedQts, externallyUpdatedPeerId: externallyUpdatedPeerId, authorizationListUpdated: authorizationListUpdated)
     }
 }

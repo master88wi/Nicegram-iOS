@@ -42,6 +42,7 @@ private enum DebugControllerSection: Int32 {
     case logs
     case logging
     case experiments
+    case videoExperiments
     case info
 }
 
@@ -69,6 +70,9 @@ private enum DebugControllerEntry: ItemListNodeEntry {
     case photoPreview(PresentationTheme, Bool)
     case knockoutWallpaper(PresentationTheme, Bool)
     case alternativeFolderTabs(Bool)
+    case playerEmbedding(Bool)
+    case playlistPlayback(Bool)
+    case enableHighBitrateVideoCalls(Bool)
     case hostInfo(PresentationTheme, String)
     case versionInfo(PresentationTheme)
     
@@ -82,8 +86,10 @@ private enum DebugControllerEntry: ItemListNodeEntry {
             return DebugControllerSection.logging.rawValue
         case .enableRaiseToSpeak, .keepChatNavigationStack, .skipReadHistory, .crashOnSlowQueries:
             return DebugControllerSection.experiments.rawValue
-        case .clearTips, .reimport, .resetData, .resetDatabase, .resetHoles, .reindexUnread, .resetBiometricsData, .optimizeDatabase, .photoPreview, .knockoutWallpaper, .alternativeFolderTabs:
+        case .clearTips, .reimport, .resetData, .resetDatabase, .resetHoles, .reindexUnread, .resetBiometricsData, .optimizeDatabase, .photoPreview, .knockoutWallpaper, .alternativeFolderTabs, .playerEmbedding, .playlistPlayback:
             return DebugControllerSection.experiments.rawValue
+        case .enableHighBitrateVideoCalls:
+            return DebugControllerSection.videoExperiments.rawValue
         case .hostInfo, .versionInfo:
             return DebugControllerSection.info.rawValue
         }
@@ -137,10 +143,16 @@ private enum DebugControllerEntry: ItemListNodeEntry {
             return 22
         case .alternativeFolderTabs:
             return 23
-        case .hostInfo:
+        case .playerEmbedding:
             return 24
-        case .versionInfo:
+        case .playlistPlayback:
             return 25
+        case .enableHighBitrateVideoCalls:
+            return 26
+        case .hostInfo:
+            return 29
+        case .versionInfo:
+            return 30
         }
     }
     
@@ -171,7 +183,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                                     
                                     let messages = logs.map { (name, path) -> EnqueueMessage in
                                         let id = arc4random64()
-                                        let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
+                                        let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
                                         return .message(text: "", attributes: [], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil)
                                     }
                                     let _ = enqueueMessages(account: context.account, peerId: peerId, messages: messages).start()
@@ -224,7 +236,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                                         
                                         let messages = updatedLogs.map { (name, path) -> EnqueueMessage in
                                             let id = arc4random64()
-                                            let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
+                                            let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
                                             return .message(text: "", attributes: [], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil)
                                         }
                                         let _ = enqueueMessages(account: context.account, peerId: peerId, messages: messages).start()
@@ -271,7 +283,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                                 
                                 let messages = logs.map { (name, path) -> EnqueueMessage in
                                     let id = arc4random64()
-                                    let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
+                                    let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
                                     return .message(text: "", attributes: [], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil)
                                 }
                                 let _ = enqueueMessages(account: context.account, peerId: peerId, messages: messages).start()
@@ -300,7 +312,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                                         
                                         let messages = logs.map { (name, path) -> EnqueueMessage in
                                             let id = arc4random64()
-                                            let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
+                                            let file = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.LocalFile, id: id), partialReference: nil, resource: LocalFileReferenceMediaResource(localFilePath: path, randomId: id), previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: "application/text", size: nil, attributes: [.FileName(fileName: name)])
                                             return .message(text: "", attributes: [], mediaReference: .standalone(media: file), replyToMessageId: nil, localGroupingKey: nil)
                                         }
                                         let _ = enqueueMessages(account: context.account, peerId: peerId, messages: messages).start()
@@ -509,7 +521,7 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                     })
             })
         case let .photoPreview(theme, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Photo Preview", value: value, sectionId: self.section, style: .blocks, updated: { value in
+            return ItemListSwitchItem(presentationData: presentationData, title: "Media Preview (Updated)", value: value, sectionId: self.section, style: .blocks, updated: { value in
                 let _ = arguments.sharedContext.accountManager.transaction ({ transaction in
                     transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
                         var settings = settings as? ExperimentalUISettings ?? ExperimentalUISettings.defaultSettings
@@ -534,6 +546,36 @@ private enum DebugControllerEntry: ItemListNodeEntry {
                     transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
                         var settings = settings as? ExperimentalUISettings ?? ExperimentalUISettings.defaultSettings
                         settings.foldersTabAtBottom = value
+                        return settings
+                    })
+                }).start()
+            })
+        case let .playerEmbedding(value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Player Embedding", value: value, sectionId: self.section, style: .blocks, updated: { value in
+                let _ = arguments.sharedContext.accountManager.transaction ({ transaction in
+                    transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
+                        var settings = settings as? ExperimentalUISettings ?? ExperimentalUISettings.defaultSettings
+                        settings.playerEmbedding = value
+                        return settings
+                    })
+                }).start()
+            })
+        case let .playlistPlayback(value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Playlist Playback", value: value, sectionId: self.section, style: .blocks, updated: { value in
+                let _ = arguments.sharedContext.accountManager.transaction ({ transaction in
+                    transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
+                        var settings = settings as? ExperimentalUISettings ?? ExperimentalUISettings.defaultSettings
+                        settings.playlistPlayback = value
+                        return settings
+                    })
+                }).start()
+            })
+        case let .enableHighBitrateVideoCalls(value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "HD Video Calls", value: value, sectionId: self.section, style: .blocks, updated: { value in
+                let _ = arguments.sharedContext.accountManager.transaction ({ transaction in
+                    transaction.updateSharedData(ApplicationSpecificSharedDataKeys.experimentalUISettings, { settings in
+                        var settings = settings as? ExperimentalUISettings ?? ExperimentalUISettings.defaultSettings
+                        settings.enableHighBitrateVideoCalls = value
                         return settings
                     })
                 }).start()
@@ -578,9 +620,12 @@ private func debugControllerEntries(presentationData: PresentationData, loggingS
     entries.append(.resetHoles(presentationData.theme))
     entries.append(.reindexUnread(presentationData.theme))
     entries.append(.optimizeDatabase(presentationData.theme))
-    entries.append(.photoPreview(presentationData.theme, experimentalSettings.chatListPhotos))
+    //entries.append(.photoPreview(presentationData.theme, experimentalSettings.chatListPhotos))
     entries.append(.knockoutWallpaper(presentationData.theme, experimentalSettings.knockoutWallpaper))
     entries.append(.alternativeFolderTabs(experimentalSettings.foldersTabAtBottom))
+    entries.append(.playerEmbedding(experimentalSettings.playerEmbedding))
+    entries.append(.playlistPlayback(experimentalSettings.playlistPlayback))
+    entries.append(.enableHighBitrateVideoCalls(experimentalSettings.enableHighBitrateVideoCalls))
 
     if let backupHostOverride = networkSettings?.backupHostOverride {
         entries.append(.hostInfo(presentationData.theme, "Host: \(backupHostOverride)"))

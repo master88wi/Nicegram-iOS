@@ -253,6 +253,10 @@ public final class AccountViewTracker {
     private var nextUpdatedViewCountDisposableId: Int32 = 0
     private var updatedViewCountDisposables = DisposableDict<Int32>()
     
+    private var updatedReactionsMessageIdsAndTimestamps: [MessageId: Int32] = [:]
+    private var nextUpdatedReactionsDisposableId: Int32 = 0
+    private var updatedReactionsDisposables = DisposableDict<Int32>()
+    
     private var updatedSeenLiveLocationMessageIdsAndTimestamps: [MessageId: Int32] = [:]
     private var nextSeenLiveLocationDisposableId: Int32 = 0
     private var seenLiveLocationDisposables = DisposableDict<Int32>()
@@ -303,6 +307,7 @@ public final class AccountViewTracker {
     
     deinit {
         self.updatedViewCountDisposables.dispose()
+        self.updatedReactionsDisposables.dispose()
         self.externallyUpdatedPeerIdDisposable.dispose()
     }
     
@@ -594,20 +599,34 @@ public final class AccountViewTracker {
                                             return account.postbox.transaction { transaction -> Void in
                                                 for i in 0 ..< messageIds.count {
                                                     if i < viewCounts.count {
-                                                        transaction.updateMessage(messageIds[i], update: { currentMessage in
-                                                            let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
-                                                            var attributes = currentMessage.attributes
-                                                            loop: for j in 0 ..< attributes.count {
-                                                                if let attribute = attributes[j] as? ViewCountMessageAttribute {
-                                                                    if attribute.count >= Int(viewCounts[i]) {
-                                                                        return .skip
+                                                        let views = viewCounts[i]
+                                                        do {
+                                                            transaction.updateMessage(messageIds[i], update: { currentMessage in
+                                                                let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                                                                var attributes = currentMessage.attributes
+                                                                loop: for j in 0 ..< attributes.count {
+                                                                    if let attribute = attributes[j] as? ViewCountMessageAttribute {
+                                                                        attributes[j] = ViewCountMessageAttribute(count: max(attribute.count, Int(views)))
                                                                     }
-                                                                    attributes[j] = ViewCountMessageAttribute(count: max(attribute.count, Int(viewCounts[i])))
-                                                                    break loop
                                                                 }
-                                                            }
-                                                            return .update(StoreMessage(id: currentMessage.id, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
-                                                        })
+                                                                return .update(StoreMessage(id: currentMessage.id, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                                                            })
+                                                        }
+                                                        /*if case let .messageViews(views, forwards) = viewCounts[i] {
+                                                            transaction.updateMessage(messageIds[i], update: { currentMessage in
+                                                                let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                                                                var attributes = currentMessage.attributes
+                                                                loop: for j in 0 ..< attributes.count {
+                                                                    if let attribute = attributes[j] as? ViewCountMessageAttribute {
+                                                                        attributes[j] = ViewCountMessageAttribute(count: max(attribute.count, Int(views)))
+                                                                    }
+                                                                    if let _ = attributes[j] as? ForwardCountMessageAttribute {
+                                                                        attributes[j] = ForwardCountMessageAttribute(count: Int(forwards))
+                                                                    }
+                                                                }
+                                                                return .update(StoreMessage(id: currentMessage.id, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                                                            })
+                                                        }*/
                                                     }
                                                 }
                                             }
@@ -629,6 +648,89 @@ public final class AccountViewTracker {
                 }
             }
         }
+    }
+    
+    public func updateReactionsForMessageIds(messageIds: Set<MessageId>) {
+        /*self.queue.async {
+            var addedMessageIds: [MessageId] = []
+            let timestamp = Int32(CFAbsoluteTimeGetCurrent())
+            for messageId in messageIds {
+                let messageTimestamp = self.updatedReactionsMessageIdsAndTimestamps[messageId]
+                if messageTimestamp == nil || messageTimestamp! < timestamp - 5 * 60 {
+                    self.updatedReactionsMessageIdsAndTimestamps[messageId] = timestamp
+                    addedMessageIds.append(messageId)
+                }
+            }
+            if !addedMessageIds.isEmpty {
+                for (peerId, messageIds) in messagesIdsGroupedByPeerId(Set(addedMessageIds)) {
+                    let disposableId = self.nextUpdatedReactionsDisposableId
+                    self.nextUpdatedReactionsDisposableId += 1
+                    
+                    if let account = self.account {
+                        let signal = (account.postbox.transaction { transaction -> Signal<Void, NoError> in
+                            if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
+                                return account.network.request(Api.functions.messages.getMessagesReactions(peer: inputPeer, id: messageIds.map { $0.id }))
+                                |> map(Optional.init)
+                                |> `catch` { _ -> Signal<Api.Updates?, NoError> in
+                                    return .single(nil)
+                                }
+                                |> mapToSignal { updates -> Signal<Void, NoError> in
+                                    guard let updates = updates else {
+                                        return .complete()
+                                    }
+                                    return account.postbox.transaction { transaction -> Void in
+                                        let updateList: [Api.Update]
+                                        switch updates {
+                                        case let .updates(updates, _, _, _, _):
+                                            updateList = updates
+                                        case let .updatesCombined(updates, _, _, _, _, _):
+                                            updateList = updates
+                                        case let .updateShort(update, _):
+                                            updateList = [update]
+                                        default:
+                                            updateList = []
+                                        }
+                                        for update in updateList {
+                                            switch update {
+                                            case let .updateMessageReactions(peer, msgId, reactions):
+                                                transaction.updateMessage(MessageId(peerId: peer.peerId, namespace: Namespaces.Message.Cloud, id: msgId), update: { currentMessage in
+                                                    
+                                                    let updatedReactions = ReactionsMessageAttribute(apiReactions: reactions)
+                                                    
+                                                    let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                                                    var attributes = currentMessage.attributes
+                                                    loop: for j in 0 ..< attributes.count {
+                                                        if let attribute = attributes[j] as? ReactionsMessageAttribute {
+                                                            if updatedReactions.reactions == attribute.reactions {
+                                                                return .skip
+                                                            }
+                                                            attributes[j] = updatedReactions
+                                                            break loop
+                                                        }
+                                                    }
+                                                    return .update(StoreMessage(id: currentMessage.id, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                                                })
+                                            default:
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                return .complete()
+                            }
+                        }
+                        |> switchToLatest)
+                        |> afterDisposed { [weak self] in
+                            self?.queue.async {
+                                self?.updatedReactionsDisposables.set(nil, forKey: disposableId)
+                            }
+                        }
+                        self.updatedReactionsDisposables.set(signal.start(), forKey: disposableId)
+                    }
+                }
+            }
+        }*/
     }
     
     public func updateSeenLiveLocationForMessageIds(messageIds: Set<MessageId>) {
@@ -1230,11 +1332,13 @@ public final class AccountViewTracker {
                 if lhsTimestamp != rhsTimestamp {
                     return false
                 }
+                var lhsVideo = false
                 var lhsMissed = false
                 var lhsOther = false
                 inner: for media in lhs.media {
                     if let action = media as? TelegramMediaAction {
-                        if case let .phoneCall(_, discardReason, _) = action.action {
+                        if case let .phoneCall(_, discardReason, _, video) = action.action {
+                            lhsVideo = video
                             if lhs.flags.contains(.Incoming), let discardReason = discardReason, case .missed = discardReason {
                                 lhsMissed = true
                             } else {
@@ -1244,11 +1348,13 @@ public final class AccountViewTracker {
                         }
                     }
                 }
+                var rhsVideo = false
                 var rhsMissed = false
                 var rhsOther = false
                 inner: for media in rhs.media {
                     if let action = media as? TelegramMediaAction {
-                        if case let .phoneCall(_, discardReason, _) = action.action {
+                        if case let .phoneCall(_, discardReason, _, video) = action.action {
+                            rhsVideo = video
                             if rhs.flags.contains(.Incoming), let discardReason = discardReason, case .missed = discardReason {
                                 rhsMissed = true
                             } else {
@@ -1258,7 +1364,7 @@ public final class AccountViewTracker {
                         }
                     }
                 }
-                if lhsMissed != rhsMissed || lhsOther != rhsOther {
+                if lhsMissed != rhsMissed || lhsOther != rhsOther || lhsVideo != rhsVideo {
                     return false
                 }
                 return true

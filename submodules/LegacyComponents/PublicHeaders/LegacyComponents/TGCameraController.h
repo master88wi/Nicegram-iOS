@@ -1,3 +1,4 @@
+#import <AVFoundation/AVFoundation.h>
 #import <LegacyComponents/TGOverlayControllerWindow.h>
 #import <LegacyComponents/TGOverlayController.h>
 #import <LegacyComponents/LegacyComponentsContext.h>
@@ -9,6 +10,8 @@
 @class TGMediaEditingContext;
 @class TGSuggestionContext;
 @class TGVideoEditAdjustments;
+
+@protocol TGPhotoPaintStickersContext;
 
 typedef enum {
     TGCameraControllerGenericIntent,
@@ -39,6 +42,7 @@ typedef enum {
 @property (nonatomic, assign) bool hasSchedule;
 @property (nonatomic, assign) bool reminder;
 @property (nonatomic, strong) TGSuggestionContext *suggestionContext;
+@property (nonatomic, strong) id<TGPhotoPaintStickersContext> stickersContext;
 @property (nonatomic, assign) bool shortcut;
 
 @property (nonatomic, strong) NSString *forcedCaption;
@@ -57,6 +61,7 @@ typedef enum {
 @property (nonatomic, copy) void(^customPresentOverlayController)(TGOverlayController *(^)(id<LegacyComponentsContext>));
 
 @property (nonatomic, copy) void (^presentScheduleController)(void (^)(int32_t));
+@property (nonatomic, copy) void (^presentTimerController)(void (^)(int32_t));
 
 - (instancetype)initWithContext:(id<LegacyComponentsContext>)context saveEditedPhotos:(bool)saveEditedPhotos saveCapturedMedia:(bool)saveCapturedMedia;
 - (instancetype)initWithContext:(id<LegacyComponentsContext>)context saveEditedPhotos:(bool)saveEditedPhotos saveCapturedMedia:(bool)saveCapturedMedia intent:(TGCameraControllerIntent)intent;

@@ -521,6 +521,8 @@ private func decryptedAttributes46(_ attributes: [TelegramMediaFileAttribute], t
                 result.append(.documentAttributeAudio(flags: flags, duration: Int32(duration), title: title, performer: performer, waveform: waveformBuffer))
             case .HasLinkedStickers:
                 break
+            case .hintFileIsLarge:
+                break
         }
     }
     return result
@@ -576,6 +578,8 @@ private func decryptedAttributes73(_ attributes: [TelegramMediaFileAttribute], t
                 result.append(.documentAttributeAudio(flags: flags, duration: Int32(duration), title: title, performer: performer, waveform: waveformBuffer))
             case .HasLinkedStickers:
                 break
+            case .hintFileIsLarge:
+                break
         }
     }
     return result
@@ -630,6 +634,8 @@ private func decryptedAttributes101(_ attributes: [TelegramMediaFileAttribute], 
                 }
                 result.append(.documentAttributeAudio(flags: flags, duration: Int32(duration), title: title, performer: performer, waveform: waveformBuffer))
             case .HasLinkedStickers:
+                break
+            case .hintFileIsLarge:
                 break
         }
     }
@@ -1400,6 +1406,7 @@ private func sendMessage(auxiliaryMethods: AccountAuxiliaryMethods, postbox: Pos
                                 if case .message = result {
                                     flags.remove(.Unsent)
                                     flags.remove(.Sending)
+                                    flags.remove(.Failed)
                                 } else {
                                     flags = [.Failed]
                                 }
@@ -1413,7 +1420,7 @@ private func sendMessage(auxiliaryMethods: AccountAuxiliaryMethods, postbox: Pos
                                 if let fromMedia = currentMessage.media.first, let encryptedFile = encryptedFile, let file = file {
                                     var toMedia: Media?
                                     if let fromMedia = fromMedia as? TelegramMediaFile {
-                                        let updatedFile = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.CloudSecretFile, id: encryptedFile.id), partialReference: nil, resource: SecretFileMediaResource(fileId: encryptedFile.id, accessHash: encryptedFile.accessHash, containerSize: encryptedFile.size, decryptedSize: file.size, datacenterId: Int(encryptedFile.datacenterId), key: file.key), previewRepresentations: fromMedia.previewRepresentations, immediateThumbnailData: fromMedia.immediateThumbnailData, mimeType: fromMedia.mimeType, size: fromMedia.size, attributes: fromMedia.attributes)
+                                        let updatedFile = TelegramMediaFile(fileId: MediaId(namespace: Namespaces.Media.CloudSecretFile, id: encryptedFile.id), partialReference: nil, resource: SecretFileMediaResource(fileId: encryptedFile.id, accessHash: encryptedFile.accessHash, containerSize: encryptedFile.size, decryptedSize: file.size, datacenterId: Int(encryptedFile.datacenterId), key: file.key), previewRepresentations: fromMedia.previewRepresentations, videoThumbnails: fromMedia.videoThumbnails, immediateThumbnailData: fromMedia.immediateThumbnailData, mimeType: fromMedia.mimeType, size: fromMedia.size, attributes: fromMedia.attributes)
                                         toMedia = updatedFile
                                         updatedMedia = [updatedFile]
                                     }
@@ -1622,7 +1629,7 @@ private func requestTerminateSecretChat(postbox: Postbox, network: Network, peer
                                 transaction.updatePeerCachedData(peerIds: Set([peerId]), update: { _, current in
                                     if let current = current as? CachedSecretChatData {
                                         var peerStatusSettings = current.peerStatusSettings ?? PeerStatusSettings()
-                                        peerStatusSettings = []
+                                        peerStatusSettings.flags = []
                                         return current.withUpdatedPeerStatusSettings(peerStatusSettings)
                                     } else {
                                         return current
