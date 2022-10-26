@@ -218,7 +218,7 @@ lane :build_bazel do |options|
   --gitCodesigningRepository=#{git_codesigning_repository} \
   --gitCodesigningType=#{git_codesigning_type} \
   --buildNumber=#{build_number} \
-  --configuration=release_universal \
+  --configuration=release_arm64 \
   --outputBuildArtifactsPath=#{artifacts_path} "
 
   unless DISABLE_PARALLEL_SWIFTMODULE_GENERATION.nil?
