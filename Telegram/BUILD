@@ -661,6 +661,18 @@ plist_fragment(
 )
 
 plist_fragment(
+    name = "RequiredDeviceCapabilitiesPlist",
+    extension = "plist",
+    template =
+    """
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+    """
+)
+
+plist_fragment(
     name = "AppNameInfoPlist",
     extension = "plist",
     template =
@@ -858,6 +870,7 @@ ios_framework(
         ":MtProtoKitInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     minimum_os_version = minimum_os_version,
     extension_safe = True,
@@ -898,6 +911,7 @@ ios_framework(
         ":SwiftSignalKitInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     minimum_os_version = minimum_os_version,
     extension_safe = True,
@@ -938,6 +952,7 @@ ios_framework(
         ":PostboxInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     frameworks = [
         ":SwiftSignalKitFramework",
@@ -981,6 +996,7 @@ ios_framework(
         ":TelegramApiInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     minimum_os_version = minimum_os_version,
     extension_safe = True,
@@ -1021,6 +1037,7 @@ ios_framework(
         ":TelegramCoreInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     frameworks = [
         ":MtProtoKitFramework",
@@ -1066,6 +1083,7 @@ ios_framework(
         ":AsyncDisplayKitInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     minimum_os_version = minimum_os_version,
     extension_safe = True,
@@ -1149,6 +1167,7 @@ ios_framework(
         ":DisplayInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     frameworks = [
         ":SwiftSignalKitFramework",
@@ -1193,6 +1212,7 @@ ios_framework(
         ":TelegramUIInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
     ],
     frameworks = [
         ":MtProtoKitFramework",
@@ -1286,6 +1306,7 @@ ios_extension(
     infoplists = [
         ":ShareInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
@@ -1391,6 +1412,7 @@ ios_extension(
     infoplists = [
         ":NotificationContentInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
@@ -1495,6 +1517,7 @@ ios_extension(
     infoplists = [
         ":WidgetInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
@@ -1628,6 +1651,7 @@ ios_extension(
     infoplists = [
         ":IntentsInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
@@ -1722,6 +1746,7 @@ ios_extension(
     infoplists = [
         ":BroadcastUploadInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
@@ -1801,6 +1826,7 @@ ios_extension(
     infoplists = [
         ":NotificationServiceInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
@@ -1940,6 +1966,7 @@ plist_fragment(
     <key>UIRequiredDeviceCapabilities</key>
      <array>
          <string>armv7</string>
+         <string>arm64</string>
      </array>
     <key>UIRequiresPersistentWiFi</key>
     <true/>
@@ -2013,6 +2040,7 @@ ios_application(
         ":TelegramInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ],
     alternate_icons = [
@@ -2076,6 +2104,7 @@ ios_application(
         ":TelegramInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ],
     deps = [
@@ -2099,6 +2128,7 @@ ios_application(
         ":TelegramInfoPlist",
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ],
     deps = [
