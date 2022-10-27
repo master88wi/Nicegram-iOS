@@ -415,7 +415,7 @@ def resolve_codesigning(arguments, base_path, build_configuration, provisioning_
             bundle_id=build_configuration.bundle_id,
             codesigning_type=arguments.gitCodesigningType,
             password=password,
-            always_fetch= arguments.gitCodesigningUseCurrent
+            always_fetch=arguments.gitCodesigningUseCurrent
         )
     elif arguments.codesigningInformationPath is not None:
         profile_source = DirectoryCodesigningSource(
