@@ -117,7 +117,7 @@ genrule(
 )
 
 minimum_os_version = "11.0"
-minimum_watchos_version="9.0"
+minimum_watchos_version="6.0"
 
 empty_languages = [
     "ar",
@@ -792,21 +792,21 @@ watchos_extension(
 )
 
 
-genrule(
-    name = "StripWatchosStubBinary",
-    cmd_bash =
-"""
-    echo 'lipo -remove armv7k -remove arm64 -remove arm64e $$1/TelegramWatch.app/_WatchKitStub/WK -output $$1/TelegramWatch.app/_WatchKitStub/WK' > $(location StripWatchosStubBinary.sh)
-    echo '' >> $(location StripWatchosStubBinary.sh)
-""",
-    outs = [
-        "StripWatchosStubBinary.sh",
-    ],
-    executable = True,
-    visibility = [
-        "//visibility:public",
-    ]
-)
+#genrule(
+#    name = "StripWatchosStubBinary",
+#    cmd_bash =
+#"""
+#    echo 'lipo -remove armv7k -remove arm64 -remove arm64e $$1/TelegramWatch.app/_WatchKitStub/WK -output $$1/TelegramWatch.app/_WatchKitStub/WK' > $(location StripWatchosStubBinary.sh)
+#    echo '' >> $(location StripWatchosStubBinary.sh)
+#""",
+#    outs = [
+#        "StripWatchosStubBinary.sh",
+#    ],
+#    executable = True,
+#    visibility = [
+#        "//visibility:public",
+#    ]
+#)
 
 watchos_application(
     name = "TelegramWatchApp",
@@ -827,7 +827,7 @@ watchos_application(
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:WatchApp.mobileprovision",
     }),
-    ipa_post_processor = ":StripWatchosStubBinary",
+#    ipa_post_processor = ":StripWatchosStubBinary",
     resources = [
         ":TelegramWatchAppResources",
         ":TelegramWatchAppAssets",
@@ -1381,7 +1381,7 @@ swift_library(
     ],
 )
 
-'''genrule(
+genrule(
     name = "SetMinOsVersionNotificationContentExtension",
     cmd_bash =
 """
@@ -1398,7 +1398,7 @@ swift_library(
     visibility = [
         "//visibility:public",
     ]
-)'''
+)
 
 ios_extension(
     name = "NotificationContentExtension",
@@ -1417,7 +1417,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
-    #ipa_post_processor = ":SetMinOsVersionNotificationContentExtension",
+    ipa_post_processor = ":SetMinOsVersionNotificationContentExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:NotificationContent.mobileprovision",
@@ -1963,6 +1963,10 @@ plist_fragment(
     <false/>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
+    <key>UIRequiredDeviceCapabilities</key>
+     <array>
+         <string>armv7</string>
+     </array>
     <key>UIRequiresPersistentWiFi</key>
     <true/>
     <key>UIStatusBarStyle</key>
