@@ -116,7 +116,7 @@ genrule(
     ],
 )
 
-minimum_os_version = "11.0"
+minimum_os_version = "9.0"
 minimum_watchos_version="6.0"
 
 empty_languages = [
