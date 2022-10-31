@@ -1,10 +1,10 @@
 #import "SMetaDisposable.h"
 
-#import <os/lock.h>
+#import <libkern/OSAtomic.h>
 
 @interface SMetaDisposable ()
 {
-    os_unfair_lock _lock;
+    OSSpinLock _lock;
     bool _disposed;
     id<SDisposable> _disposable;
 }
@@ -18,14 +18,14 @@
     id<SDisposable> previousDisposable = nil;
     bool dispose = false;
     
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     dispose = _disposed;
     if (!dispose)
     {
         previousDisposable = _disposable;
         _disposable = disposable;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (previousDisposable != nil)
         [previousDisposable dispose];
@@ -38,13 +38,13 @@
 {
     id<SDisposable> disposable = nil;
     
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     if (!_disposed)
     {
         disposable = _disposable;
         _disposed = true;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (disposable != nil)
         [disposable dispose];

@@ -3737,7 +3737,7 @@ extension ChatListControllerImpl: AssistantListener {
     public func onOpenChat(chatURL: URL?) {
         guard let url = chatURL else { return }
         if UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url)
+            UIApplication.shared.openURL(url)
         }
     }
 }

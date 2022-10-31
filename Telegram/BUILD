@@ -1620,7 +1620,7 @@ swift_library(
     ],
 )
 
-'''genrule(
+genrule(
     name = "SetMinOsVersionIntentsExtension",
     cmd_bash =
 """
@@ -1637,7 +1637,7 @@ swift_library(
     visibility = [
         "//visibility:public",
     ]
-)'''
+)
 
 ios_extension(
     name = "IntentsExtension",
@@ -1656,7 +1656,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
-    #ipa_post_processor = ":SetMinOsVersionIntentsExtension",
+    ipa_post_processor = ":SetMinOsVersionIntentsExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Intents.mobileprovision",
@@ -1715,7 +1715,7 @@ swift_library(
     ],
 )
 
-'''genrule(
+genrule(
     name = "SetMinOsVersionBroadcastUploadExtension",
     cmd_bash =
 """
@@ -1732,7 +1732,7 @@ swift_library(
     visibility = [
         "//visibility:public",
     ]
-)'''
+)
 
 ios_extension(
     name = "BroadcastUploadExtension",
@@ -1751,7 +1751,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
-    #ipa_post_processor = ":SetMinOsVersionBroadcastUploadExtension",
+    ipa_post_processor = ":SetMinOsVersionBroadcastUploadExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:BroadcastUpload.mobileprovision",
@@ -1795,7 +1795,7 @@ plist_fragment(
     )
 )
 
-'''genrule(
+genrule(
     name = "SetMinOsVersionNotificationServiceExtension",
     cmd_bash =
 """
@@ -1812,7 +1812,7 @@ plist_fragment(
     visibility = [
         "//visibility:public",
     ]
-)'''
+)
 
 ios_extension(
     name = "NotificationServiceExtension",
@@ -1831,7 +1831,7 @@ ios_extension(
         ":AppNameInfoPlist",
     ],
     minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
-    #ipa_post_processor = ":SetMinOsVersionNotificationServiceExtension",
+    ipa_post_processor = ":SetMinOsVersionNotificationServiceExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:NotificationService.mobileprovision",

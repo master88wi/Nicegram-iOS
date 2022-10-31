@@ -102,6 +102,8 @@ final class WebEmbedPlayerNode: ASDisplayNode, WKNavigationDelegate {
         
         if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
             configuration.mediaTypesRequiringUserActionForPlayback = []
+        } else if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
+            configuration.requiresUserActionForMediaPlayback = false
         } else {
             configuration.mediaPlaybackRequiresUserAction = false
         }

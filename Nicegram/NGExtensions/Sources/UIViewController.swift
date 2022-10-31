@@ -12,11 +12,7 @@ public extension UIViewController {
     func routeToAppSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) ,
            UIApplication.shared.canOpenURL(url) {
-            if #available(iOS 10.0, *) {
-                UIApplication.shared.open(url)
-            } else {
-                UIApplication.shared.openURL(url)
-            }
+            UIApplication.shared.openURL(url)
         }
     }
 }

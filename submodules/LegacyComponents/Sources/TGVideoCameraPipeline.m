@@ -2,7 +2,7 @@
 
 #import "LegacyComponentsInternal.h"
 
-#import <os/lock.h>
+#import <libkern/OSAtomic.h>
 #import <CoreMedia/CoreMedia.h>
 #import <ImageIO/ImageIO.h>
 #import <Accelerate/Accelerate.h>
@@ -69,7 +69,7 @@ const NSInteger TGVideoCameraRetainedBufferCount = 16;
     id<TGLiveUploadInterface> _watcher;
     id _liveUploadData;
     
-    os_unfair_lock _recordLock;
+    OSSpinLock _recordLock;
     bool _startRecordAfterAudioBuffer;
     
     CVPixelBufferRef _currentPreviewPixelBuffer;
@@ -404,7 +404,7 @@ const NSInteger TGVideoCameraRetainedBufferCount = 16;
         
         CFRelease(blockBuffer);
         
-        os_unfair_lock_lock(&_recordLock);
+        OSSpinLockLock(&_recordLock);
         if (_startRecordAfterAudioBuffer)
         {
             _startRecordAfterAudioBuffer = false;
@@ -413,7 +413,7 @@ const NSInteger TGVideoCameraRetainedBufferCount = 16;
                 [self startRecording:_recordingURL preset:_preset liveUpload:_liveUpload];
             });
         }
-        os_unfair_lock_unlock(&_recordLock);
+        OSSpinLockUnlock(&_recordLock);
     }
 }
 
@@ -669,14 +669,14 @@ const NSInteger TGVideoCameraRetainedBufferCount = 16;
     _preset = preset;
     _liveUpload = liveUpload;
     
-    os_unfair_lock_lock(&_recordLock);
+    OSSpinLockLock(&_recordLock);
     if (self.outputAudioFormatDescription == NULL)
     {
         _startRecordAfterAudioBuffer = true;
-        os_unfair_lock_unlock(&_recordLock);
+        OSSpinLockUnlock(&_recordLock);
         return;
     }
-    os_unfair_lock_unlock(&_recordLock);
+    OSSpinLockUnlock(&_recordLock);
     
 	@synchronized (self)
 	{

@@ -1,10 +1,10 @@
 #import <MtProtoKit/MTAtomic.h>
 
-#import <os/lock.h>
+#import <libkern/OSAtomic.h>
 
 @interface MTAtomic ()
 {
-    os_unfair_lock _lock;
+    volatile OSSpinLock _lock;
     id _value;
 }
 
@@ -25,19 +25,19 @@
 - (id)swap:(id)newValue
 {
     id previousValue = nil;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     previousValue = _value;
     _value = newValue;
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     return previousValue;
 }
 
 - (id)value
 {
     id previousValue = nil;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     previousValue = _value;
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     return previousValue;
 }
@@ -45,19 +45,19 @@
 - (id)modify:(id (^)(id))f
 {
     id newValue = nil;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     newValue = f(_value);
     _value = newValue;
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     return newValue;
 }
 
 - (id)with:(id (^)(id))f
 {
     id result = nil;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     result = f(_value);
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     return result;
 }
 

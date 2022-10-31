@@ -6,7 +6,7 @@
 
 #import "ASActor.h"
 
-#import <os/lock.h>
+#import <libkern/OSAtomic.h>
 
 #include <vector>
 #include <unordered_map>
@@ -17,8 +17,8 @@ static dispatch_queue_t mainGraphQueue = nil;
 static dispatch_queue_t globalGraphQueue = nil;
 static dispatch_queue_t highPriorityGraphQueue = nil;
 
-static os_unfair_lock removeWatcherRequestsLock = OS_UNFAIR_LOCK_INIT;
-static os_unfair_lock removeWatcherFromPathRequestsLock = OS_UNFAIR_LOCK_INIT;
+static volatile OSSpinLock removeWatcherRequestsLock = OS_SPINLOCK_INIT;
+static volatile OSSpinLock removeWatcherFromPathRequestsLock = OS_SPINLOCK_INIT;
 
 @interface ActionStage ()
 {
@@ -790,11 +790,11 @@ ActionStage *ActionStageInstance()
     }
     
     bool alreadyExecuting = false;
-    os_unfair_lock_lock(&removeWatcherRequestsLock);
+    OSSpinLockLock(&removeWatcherRequestsLock);
     if (!_removeWatcherRequests.empty())
         alreadyExecuting = true;
     _removeWatcherRequests.push_back(watcherGraphHandle);
-    os_unfair_lock_unlock(&removeWatcherRequestsLock);
+    OSSpinLockUnlock(&removeWatcherRequestsLock);
     
     if (alreadyExecuting && ![self isCurrentQueueStageQueue])
         return;
@@ -803,10 +803,10 @@ ActionStage *ActionStageInstance()
     {
         std::vector<ASHandle *> removeWatchers;
         
-        os_unfair_lock_lock(&removeWatcherRequestsLock);
+        OSSpinLockLock(&removeWatcherRequestsLock);
         removeWatchers.insert(removeWatchers.begin(), _removeWatcherRequests.begin(), _removeWatcherRequests.end());
         _removeWatcherRequests.clear();
-        os_unfair_lock_unlock(&removeWatcherRequestsLock);
+        OSSpinLockUnlock(&removeWatcherRequestsLock);
         
         for (std::vector<ASHandle *>::iterator it = removeWatchers.begin(); it != removeWatchers.end(); it++)
         {
@@ -894,11 +894,11 @@ ActionStage *ActionStageInstance()
     }
     
     bool alreadyExecuting = false;
-    os_unfair_lock_lock(&removeWatcherFromPathRequestsLock);
+    OSSpinLockLock(&removeWatcherFromPathRequestsLock);
     if (!_removeWatcherFromPathRequests.empty())
         alreadyExecuting = true;
     _removeWatcherFromPathRequests.push_back(std::pair<ASHandle *, NSString *>(watcherGraphHandle, watcherPath));
-    os_unfair_lock_unlock(&removeWatcherFromPathRequestsLock);
+    OSSpinLockUnlock(&removeWatcherFromPathRequestsLock);
     
     if (alreadyExecuting && ![self isCurrentQueueStageQueue])
         return;
@@ -907,10 +907,10 @@ ActionStage *ActionStageInstance()
     {
         std::vector<std::pair<ASHandle *, NSString *> > removeWatchersFromPath;
         
-        os_unfair_lock_lock(&removeWatcherFromPathRequestsLock);
+        OSSpinLockLock(&removeWatcherFromPathRequestsLock);
         removeWatchersFromPath.insert(removeWatchersFromPath.begin(), _removeWatcherFromPathRequests.begin(), _removeWatcherFromPathRequests.end());
         _removeWatcherFromPathRequests.clear();
-        os_unfair_lock_unlock(&removeWatcherFromPathRequestsLock);
+        OSSpinLockUnlock(&removeWatcherFromPathRequestsLock);
         
         if (removeWatchersFromPath.size() > 1)
         {

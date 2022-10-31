@@ -1,5 +1,4 @@
 import Foundation
-import Contacts
 import CoreLocation
 import SwiftSignalKit
 
@@ -16,10 +15,10 @@ public func geocodeLocation(address: String) -> Signal<[CLPlacemark]?, NoError> 
     }
 }
 
-public func geocodeLocation(address: CNPostalAddress) -> Signal<(Double, Double)?, NoError> {
+public func geocodeLocation(dictionary: [String: String]) -> Signal<(Double, Double)?, NoError> {
     return Signal { subscriber in
         let geocoder = CLGeocoder()
-        geocoder.geocodePostalAddress(address, completionHandler: { placemarks, _ in
+        geocoder.geocodeAddressDictionary(dictionary, completionHandler: { placemarks, _ in
             if let location = placemarks?.first?.location {
                 subscriber.putNext((location.coordinate.latitude, location.coordinate.longitude))
             } else {

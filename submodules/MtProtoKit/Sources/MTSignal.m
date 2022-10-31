@@ -1,6 +1,6 @@
 #import <MtProtoKit/MTSignal.h>
 
-#import <os/lock.h>
+#import <libkern/OSAtomic.h>
 #import <MtProtoKit/MTTimer.h>
 #import <MtProtoKit/MTQueue.h>
 #import <MtProtoKit/MTAtomic.h>
@@ -55,7 +55,7 @@
 
 @interface MTSignalQueueState : NSObject <MTDisposable>
 {
-    os_unfair_lock _lock;
+    OSSpinLock _lock;
     bool _executingSignal;
     bool _terminated;
     
@@ -92,7 +92,7 @@
 - (void)enqueueSignal:(MTSignal *)signal
 {
     bool startSignal = false;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     if (_queueMode && _executingSignal)
     {
         [_queuedSignals addObject:signal];
@@ -102,7 +102,7 @@
         _executingSignal = true;
         startSignal = true;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (startSignal)
     {
@@ -130,7 +130,7 @@
     MTSignal *nextSignal = nil;
     
     bool terminated = false;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     _executingSignal = false;
     
     if (_queueMode)
@@ -146,7 +146,7 @@
     }
     else
         terminated = _terminated;
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (terminated)
         [_subscriber putCompletion];
@@ -174,10 +174,10 @@
 - (void)beginCompletion
 {
     bool executingSignal = false;
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     executingSignal = _executingSignal;
     _terminated = true;
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (!executingSignal)
         [_subscriber putCompletion];

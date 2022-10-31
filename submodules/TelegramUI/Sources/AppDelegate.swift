@@ -575,7 +575,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, canOpenUrl: { url in
             return UIApplication.shared.canOpenURL(url)
         }, openUrl: { url in
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            UIApplication.shared.openURL(url)
         })
         
         if #available(iOS 10.0, *) {
@@ -601,9 +601,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
             
             if let parsedUrl = parsedUrl {
-                UIApplication.shared.open(parsedUrl, options: [:], completionHandler: nil)
+                UIApplication.shared.openURL(parsedUrl)
             } else if let escapedUrl = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let parsedUrl = URL(string: escapedUrl) {
-                UIApplication.shared.open(parsedUrl, options: [:], completionHandler: nil)
+                UIApplication.shared.openURL(parsedUrl)
             }
         }, openUniversalUrl: { url, completion in
             if #available(iOS 10.0, *) {
@@ -679,12 +679,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             return disposable
         }, openSettings: {
             if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                UIApplication.shared.openURL(url)
             }
         }, openAppStorePage: {
             let appStoreId = buildConfig.appStoreId
             if let url = URL(string: "itms-apps://itunes.apple.com/app/id\(appStoreId)") {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                UIApplication.shared.openURL(url)
             }
         }, openSubscriptions: {
             if #available(iOS 15, *), let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
@@ -692,7 +692,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     try await AppStore.showManageSubscriptions(in: scene)
                 }
             } else if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                UIApplication.shared.openURL(url)
             }
         }, registerForNotifications: { completion in
             Logger.shared.log("App \(self.episodeId)", "register for notifications begin")
@@ -1856,7 +1856,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
                     authContext.rootController.currentWindow?.present(standardTextAlertController(theme: AlertControllerTheme(presentationData: presentationData), title: nil, text: presentationData.strings.Passport_NotLoggedInMessage, actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Calls_NotNow, action: {
                         if let callbackUrl = URL(string: secureIdCallbackUrl(with: secureIdData.callbackUrl, peerId: secureIdData.peerId, result: .cancel, parameters: [:])) {
-                            UIApplication.shared.open(callbackUrl, options: [:], completionHandler: nil)
+                            if #available(iOS 10.0, *) {
+                                UIApplication.shared.open(callbackUrl, options: [:], completionHandler: nil)
+                            } else {
+                                // Fallback on earlier versions
+                            }
                         }
                     }), TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), on: .root, blockInteraction: false, completion: {})
                 } else if let confirmationCode = parseConfirmationCodeUrl(url) {
@@ -2366,9 +2370,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             reply.identifier = "reply"
             reply.title = replyString
             reply.isDestructive = false
-            reply.isAuthenticationRequired = false
-            reply.behavior = .textInput
-            reply.activationMode = .background
+            if #available(iOS 9.0, *) {
+                reply.isAuthenticationRequired = false
+                reply.behavior = .textInput
+                reply.activationMode = .background
+            } else {
+                reply.isAuthenticationRequired = true
+                reply.activationMode = .foreground
+            }
             
             let unknownMessageCategory = UIMutableUserNotificationCategory()
             unknownMessageCategory.identifier = "unknown"

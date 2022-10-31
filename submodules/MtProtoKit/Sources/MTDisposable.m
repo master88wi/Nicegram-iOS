@@ -1,8 +1,6 @@
 #import <MtProtoKit/MTDisposable.h>
 
-#import <os/lock.h>
 #import <libkern/OSAtomic.h>
-#import <stdatomic.h>
 #import <objc/runtime.h>
 
 @interface MTBlockDisposable ()
@@ -29,8 +27,6 @@
     void *block = _block;
     if (block != NULL)
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         if (OSAtomicCompareAndSwapPtr(block, 0, &_block))
         {
             if (block != nil)
@@ -39,7 +35,6 @@
                 strongBlock = nil;
             }
         }
-#pragma clang diagnostic pop
     }
 }
 
@@ -48,8 +43,6 @@
     void *block = _block;
     if (block != NULL)
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         if (OSAtomicCompareAndSwapPtr(block, 0, &_block))
         {
             if (block != nil)
@@ -59,7 +52,6 @@
                 strongBlock = nil;
             }
         }
-#pragma clang diagnostic pop
     }
 }
 
@@ -67,7 +59,7 @@
 
 @interface MTMetaDisposable ()
 {
-    os_unfair_lock _lock;
+    OSSpinLock _lock;
     bool _disposed;
     id<MTDisposable> _disposable;
 }
@@ -81,14 +73,14 @@
     id<MTDisposable> previousDisposable = nil;
     bool dispose = false;
     
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     dispose = _disposed;
     if (!dispose)
     {
         previousDisposable = _disposable;
         _disposable = disposable;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (previousDisposable != nil)
         [previousDisposable dispose];
@@ -101,13 +93,13 @@
 {
     id<MTDisposable> disposable = nil;
     
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     if (!_disposed)
     {
         disposable = _disposable;
         _disposed = true;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (disposable != nil)
         [disposable dispose];
@@ -117,7 +109,7 @@
 
 @interface MTDisposableSet ()
 {
-    os_unfair_lock _lock;
+    OSSpinLock _lock;
     bool _disposed;
     id<MTDisposable> _singleDisposable;
     NSArray *_multipleDisposables;
@@ -134,7 +126,7 @@
     
     bool dispose = false;
     
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     dispose = _disposed;
     if (!dispose)
     {
@@ -155,14 +147,14 @@
             _singleDisposable = disposable;
         }
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (dispose)
         [disposable dispose];
 }
 
 - (void)remove:(id<MTDisposable>)disposable {
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     if (_multipleDisposables != nil)
     {
         NSMutableArray *multipleDisposables = [[NSMutableArray alloc] initWithArray:_multipleDisposables];
@@ -173,7 +165,7 @@
     {
         _singleDisposable = nil;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
 }
 
 - (void)dispose
@@ -181,7 +173,7 @@
     id<MTDisposable> singleDisposable = nil;
     NSArray *multipleDisposables = nil;
     
-    os_unfair_lock_lock(&_lock);
+    OSSpinLockLock(&_lock);
     if (!_disposed)
     {
         _disposed = true;
@@ -190,7 +182,7 @@
         _singleDisposable = nil;
         _multipleDisposables = nil;
     }
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
     
     if (singleDisposable != nil)
         [singleDisposable dispose];

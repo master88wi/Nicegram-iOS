@@ -21,7 +21,9 @@
 #import "POPBasicAnimationInternal.h"
 #import "POPDecayAnimation.h"
 
-#import <os/lock.h>
+#if !TARGET_OS_IPHONE
+#import <libkern/OSAtomic.h>
+#endif
 
 using namespace std;
 using namespace POP;
@@ -95,7 +97,7 @@ static BOOL _disableBackgroundThread = YES;
   CFTimeInterval _slowMotionLastTime;
   CFTimeInterval _slowMotionAccumulator;
   CFTimeInterval _beginTime;
-  os_unfair_lock _lock;
+  OSSpinLock _lock;
   BOOL _disableDisplayLink;
 }
 @end
@@ -261,7 +263,7 @@ static POPAnimation *deleteDictEntry(POPAnimator *self, id __unsafe_unretained o
   POPAnimation *anim = nil;
 
   // lock
-  os_unfair_lock_lock(&self->_lock);
+  OSSpinLockLock(&self->_lock);
 
   NSMutableDictionary *keyAnimationsDict = (__bridge id)CFDictionaryGetValue(self->_dict, (__bridge void *)obj);
   if (keyAnimationsDict) {
@@ -280,7 +282,7 @@ static POPAnimation *deleteDictEntry(POPAnimator *self, id __unsafe_unretained o
   }
 
   // unlock
-  os_unfair_lock_unlock(&self->_lock);
+  OSSpinLockUnlock(&self->_lock);
   return anim;
 }
 
@@ -297,7 +299,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
 
   if (shouldRemove) {
     // lock
-    os_unfair_lock_lock(&self->_lock);
+    OSSpinLockLock(&self->_lock);
 
     // find item in list
     // may have already been removed on animationDidStop:
@@ -309,7 +311,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
     }
 
     // unlock
-    os_unfair_lock_unlock(&self->_lock);
+    OSSpinLockUnlock(&self->_lock);
   }
 }
 
@@ -350,7 +352,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
 #endif
 
   _dict = POPDictionaryCreateMutableWeakPointerToStrongObject(5);
-  _lock = OS_UNFAIR_LOCK_INIT;
+  _lock = OS_SPINLOCK_INIT;
 
   return self;
 }
@@ -375,14 +377,14 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   [self _renderTime:(0 != _beginTime) ? _beginTime : time items:_pendingList];
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // clear list and observer
   _pendingList.clear();
   [self _clearPendingListObserver];
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 }
 
 - (void)_clearPendingListObserver
@@ -401,7 +403,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   static const CFIndex POPAnimationApplyRunLoopOrder = CATransactionCommitRunLoopOrder - 1;
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   if (!_pendingListObserver) {
     __weak POPAnimator *weakSelf = self;
@@ -416,7 +418,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 }
 
 - (void)_renderTime:(CFTimeInterval)time items:(std::list<POPAnimatorItemRef>)items
@@ -430,19 +432,19 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   [delegate animatorWillAnimate:self];
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // count active animations
   const NSUInteger count = items.size();
   if (0 == count) {
     // unlock
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
   } else {
     // copy list into vector
     std::vector<POPAnimatorItemRef> vector{ std::begin(items), std::end(items) };
 
     // unlock
-    os_unfair_lock_unlock(&_lock);
+    OSSpinLockUnlock(&_lock);
 
     for (auto item : vector) {
       [self _renderTime:time item:item];
@@ -455,13 +457,13 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // update display link
   updateDisplayLink(self);
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 
   // notify delegate and commit
   [delegate animatorDidAnimate:self];
@@ -539,13 +541,13 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
 - (NSArray *)observers
 {
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // get observers
   NSArray *observers = 0 != _observers.count ? [_observers copy] : nil;
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
   return observers;
 }
 
@@ -561,7 +563,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // get key, animation dict associated with object
   NSMutableDictionary *keyAnimationDict = (__bridge id)CFDictionaryGetValue(_dict, (__bridge void *)obj);
@@ -575,7 +577,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
     POPAnimation *existingAnim = keyAnimationDict[key];
     if (existingAnim) {
       // unlock
-      os_unfair_lock_unlock(&_lock);
+      OSSpinLockUnlock(&_lock);
 
       if (existingAnim == anim) {
         return;
@@ -583,7 +585,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
       [self removeAnimationForObject:obj key:key cleanupDict:NO];
         
       // lock
-      os_unfair_lock_lock(&_lock);
+      OSSpinLockLock(&_lock);
     }
   }
   keyAnimationDict[key] = anim;
@@ -602,7 +604,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   updateDisplayLink(self);
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 
   // schedule runloop processing of pending animations
   [self _scheduleProcessPendingList];
@@ -611,13 +613,13 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
 - (void)removeAllAnimationsForObject:(id)obj
 {
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   NSArray *animations = [(__bridge id)CFDictionaryGetValue(_dict, (__bridge void *)obj) allValues];
   CFDictionaryRemoveValue(_dict, (__bridge void *)obj);
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 
   if (0 == animations.count) {
     return;
@@ -629,7 +631,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   POPAnimatorItemRef item;
   for (auto iter = _list.begin(); iter != _list.end();) {
@@ -642,7 +644,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 
   for (POPAnimation *anim in animations) {
     POPAnimationState *state = POPAnimationGetState(anim);
@@ -658,7 +660,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // remove from list
   POPAnimatorItemRef item;
@@ -684,7 +686,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 
   // stop animation and callout
   POPAnimationState *state = POPAnimationGetState(anim);
@@ -699,27 +701,27 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
 - (NSArray *)animationKeysForObject:(id)obj
 {
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // get keys
   NSArray *keys = [(__bridge id)CFDictionaryGetValue(_dict, (__bridge void *)obj) allKeys];
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
   return keys;
 }
 
 - (id)animationForObject:(id)obj key:(NSString *)key
 {
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   // lookup animation
   NSDictionary *keyAnimationsDict = (__bridge id)CFDictionaryGetValue(_dict, (__bridge void *)obj);
   POPAnimation *animation = keyAnimationsDict[key];
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
   return animation;
 }
 
@@ -769,7 +771,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   if (!_observers) {
     // use ordered collection for deterministic callout
@@ -780,7 +782,7 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   updateDisplayLink(self);
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 }
 
 - (void)removeObserver:(id<POPAnimatorObserving>)observer
@@ -791,13 +793,13 @@ static void stopAndCleanup(POPAnimator *self, POPAnimatorItemRef item, bool shou
   }
 
   // lock
-  os_unfair_lock_lock(&_lock);
+  OSSpinLockLock(&_lock);
 
   [_observers removeObject:observer];
   updateDisplayLink(self);
 
   // unlock
-  os_unfair_lock_unlock(&_lock);
+  OSSpinLockUnlock(&_lock);
 }
 
 @end

@@ -878,7 +878,7 @@ private func settingsItems(data: PeerInfoScreenData?, context: AccountContext, p
     // MARK: Nicegram fast hack, change later
     items[.delete]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "Delete Account", icon: UIImage(named: "Chat/Info/GroupRemovedIcon"), action: {
         if let url = URL(string: "https://my.telegram.org/delete") {
-            UIApplication.shared.open(url)
+            UIApplication.shared.openURL(url)
         }
     }))
     
@@ -6932,7 +6932,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
                 // MARK: Nicegram GermanSupport
                 if self.presentationData.strings.baseLanguageCode.lowercased().contains("de"),
                    let url = URL(string: "ncg://resolve?domain=EinleitungHilfeTelegram") {
-                    UIApplication.shared.open(url)
+                    UIApplication.shared.openURL(url)
                     break
                 }
                 //
