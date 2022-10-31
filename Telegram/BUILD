@@ -116,9 +116,6 @@ genrule(
     ],
 )
 
-minimum_os_version = "9.0"
-minimum_watchos_version= "5.0"
-
 empty_languages = [
     "ar",
     "be",
@@ -499,14 +496,11 @@ icloud_fragment = "" if not telegram_enable_icloud else """
     telegram_icloud_environment="Production" if telegram_aps_environment == "production" else "Development"
 )
 
-associated_domains_fragment = "" if telegram_bundle_id not in nicegram_bundle_ids else """
+associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_ids else """
 <key>com.apple.developer.associated-domains</key>
 <array>
     <string>applinks:telegram.me</string>
     <string>applinks:t.me</string>
-    <string>applinks:nicegram.app</string>
-    <string>applinks:yfqcuhfv.xyz</string>
-    <string>applinks:*.t.me</string>
 </array>
 """
 
@@ -537,19 +531,6 @@ communication_notifications_fragment = """
 <true/>
 """
 
-filtering_notifications_fragment = """
-<key>com.apple.developer.usernotifications.filtering</key>
-<true/>
-"""
-
-store_signin_fragment = """
-<key>com.apple.developer.applesignin</key>
-<array>
-<string>Default</string>
-</array>
-"""
-signin_fragment = store_signin_fragment if telegram_bundle_id in store_bundle_ids else ""
-
 plist_fragment(
     name = "TelegramEntitlements",
     extension = "entitlements",
@@ -563,32 +544,6 @@ plist_fragment(
         unrestricted_voip_fragment,
         carplay_fragment,
         communication_notifications_fragment,
-        filtering_notifications_fragment,
-        signin_fragment,
-    ])
-)
-
-watch_extension_app_id_fragment = """
-    <key>application-identifier</key>
-    <string>{telegram_team_id}.{telegram_bundle_id}.watchkitapp.watchkitextension</string>
-""".format(
-    telegram_team_id=telegram_team_id,
-    telegram_bundle_id=telegram_bundle_id
-)
-
-watch_extension_associated_domains_fragment = """
-<key>com.apple.developer.associated-domains</key>
-<array>
-    <string>applinks:nicegram.app</string>
-</array>
-"""
-
-plist_fragment(
-    name = "TelegramWatchEntitlements",
-    extension = "entitlements",
-    template = "".join([
-        watch_extension_app_id_fragment,
-        watch_extension_associated_domains_fragment,
     ])
 )
 
@@ -620,8 +575,6 @@ filegroup(
     ]),
 )
 
-FLICK_TYPE_SRCS = glob(["Watch/FlickTypeKit/**/*.m"])
-
 objc_library(
     name = "TelegramWatchLib",
     srcs = glob([
@@ -633,7 +586,7 @@ objc_library(
         "Watch/SSignalKit/**/*.h",
         "Watch/Bridge/**/*.h",
         "Watch/WatchCommonWatch/**/*.h",
-    ]) + FLICK_TYPE_SRCS,
+    ]),
     copts = [
         "-DTARGET_OS_WATCH=1",
         "-ITelegram/Watch",
@@ -666,7 +619,7 @@ plist_fragment(
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Nicegram</string>
+    <string>Telegram</string>
     """
 )
 
@@ -714,7 +667,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.watchkitapp.watchkitextension</string>
     <key>CFBundleName</key>
-    <string>Nicegram</string>
+    <string>Telegram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>WKExtensionDelegateClassName</key>
@@ -734,7 +687,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.watchkitapp</string>
     <key>CFBundleName</key>
-    <string>Nicegram</string>
+    <string>Telegram</string>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -755,7 +708,6 @@ watchos_extension(
         telegram_bundle_id = telegram_bundle_id,
     ),
     bundle_name = "TelegramWatchExtension",
-    entitlements = ":TelegramWatchEntitlements.entitlements",
     infoplists = [
         ":WatchExtensionInfoPlist",
         ":VersionInfoPlist",
@@ -763,7 +715,7 @@ watchos_extension(
         ":AppNameInfoPlist",
         ":WatchExtensionNSExtensionInfoPlist",
     ],
-    minimum_os_version = minimum_watchos_version,
+    minimum_os_version = "5.0",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:WatchExtension.mobileprovision",
@@ -779,23 +731,6 @@ watchos_extension(
     ],
 )
 
-
-#genrule(
-#    name = "StripWatchosStubBinary",
-#    cmd_bash =
-#"""
-#    echo 'lipo -remove armv7k -remove arm64 -remove arm64e $$1/TelegramWatch.app/_WatchKitStub/WK -output $$1/TelegramWatch.app/_WatchKitStub/WK' > $(location StripWatchosStubBinary.sh)
-#    echo '' >> $(location StripWatchosStubBinary.sh)
-#""",
-#    outs = [
-#        "StripWatchosStubBinary.sh",
-#    ],
-#    executable = True,
-#    visibility = [
-#        "//visibility:public",
-#    ]
-#)
-
 watchos_application(
     name = "TelegramWatchApp",
     bundle_id = "{telegram_bundle_id}.watchkitapp".format(
@@ -810,12 +745,11 @@ watchos_application(
         ":AppNameInfoPlist",
         ":WatchAppCompanionInfoPlist",
     ],
-    minimum_os_version = minimum_watchos_version,
+    minimum_os_version = "5.0",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:WatchApp.mobileprovision",
     }),
-#    ipa_post_processor = ":StripWatchosStubBinary",
     resources = [
         ":TelegramWatchAppResources",
         ":TelegramWatchAppAssets",
@@ -859,7 +793,7 @@ ios_framework(
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -899,7 +833,7 @@ ios_framework(
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -942,7 +876,7 @@ ios_framework(
     frameworks = [
         ":SwiftSignalKitFramework",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -982,7 +916,7 @@ ios_framework(
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -1027,7 +961,7 @@ ios_framework(
         ":SwiftSignalKitFramework",
         ":PostboxFramework",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -1067,7 +1001,7 @@ ios_framework(
         ":BuildNumberInfoPlist",
         ":VersionInfoPlist",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -1154,7 +1088,7 @@ ios_framework(
         ":SwiftSignalKitFramework",
         ":AsyncDisplayKitFramework",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -1202,7 +1136,7 @@ ios_framework(
         ":AsyncDisplayKitFramework",
         ":DisplayFramework",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     extension_safe = True,
     ipa_post_processor = strip_framework,
     deps = [
@@ -1213,7 +1147,7 @@ ios_framework(
 plist_fragment(
     name = "ShareInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
@@ -1289,7 +1223,7 @@ ios_extension(
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Share.mobileprovision",
@@ -1303,7 +1237,7 @@ ios_extension(
 plist_fragment(
     name = "NotificationContentInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
@@ -1394,7 +1328,7 @@ ios_extension(
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
-    minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    minimum_os_version = "9.0", # maintain the same minimum OS version across extensions
     ipa_post_processor = ":SetMinOsVersionNotificationContentExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1409,7 +1343,7 @@ ios_extension(
 plist_fragment(
     name = "WidgetInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
@@ -1498,7 +1432,7 @@ ios_extension(
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
-    minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    minimum_os_version = "9.0", # maintain the same minimum OS version across extensions
     ipa_post_processor = ":SetMinOsVersionWidgetExtension",
     #provides_main = True,
     provisioning_profile = select({
@@ -1518,7 +1452,7 @@ ios_extension(
 plist_fragment(
     name = "IntentsInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
@@ -1631,7 +1565,7 @@ ios_extension(
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
-    minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    minimum_os_version = "9.0", # maintain the same minimum OS version across extensions
     ipa_post_processor = ":SetMinOsVersionIntentsExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1648,7 +1582,7 @@ ios_extension(
 plist_fragment(
     name = "BroadcastUploadInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
@@ -1725,7 +1659,7 @@ ios_extension(
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
-    minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    minimum_os_version = "9.0", # maintain the same minimum OS version across extensions
     ipa_post_processor = ":SetMinOsVersionBroadcastUploadExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1741,7 +1675,7 @@ ios_extension(
 plist_fragment(
     name = "NotificationServiceInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
@@ -1804,7 +1738,7 @@ ios_extension(
         ":BuildNumberInfoPlist",
         ":AppNameInfoPlist",
     ],
-    minimum_os_version = minimum_os_version, # maintain the same minimum OS version across extensions
+    minimum_os_version = "9.0", # maintain the same minimum OS version across extensions
     ipa_post_processor = ":SetMinOsVersionNotificationServiceExtension",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
@@ -1822,7 +1756,7 @@ ios_extension(
 plist_fragment(
     name = "TelegramInfoPlist",
     extension = "plist",
-    template = 
+    template =
     """
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
@@ -1938,9 +1872,9 @@ plist_fragment(
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIRequiredDeviceCapabilities</key>
-     <array>
-         <string>arm64</string>
-     </array>
+    <array>
+        <string>armv7</string>
+    </array>
     <key>UIRequiresPersistentWiFi</key>
     <true/>
     <key>UIStatusBarStyle</key>
@@ -2003,7 +1937,7 @@ ios_application(
         telegram_bundle_id = telegram_bundle_id,
     ),
     families = ["iphone", "ipad"],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Telegram.mobileprovision",
@@ -2066,7 +2000,7 @@ ios_application(
         telegram_bundle_id = telegram_bundle_id,
     ),
     families = ["iphone", "ipad"],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Telegram.mobileprovision",
@@ -2089,7 +2023,7 @@ ios_application(
         telegram_bundle_id = telegram_bundle_id,
     ),
     families = ["iphone", "ipad"],
-    minimum_os_version = minimum_os_version,
+    minimum_os_version = "9.0",
     provisioning_profile = select({
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Telegram.mobileprovision",
