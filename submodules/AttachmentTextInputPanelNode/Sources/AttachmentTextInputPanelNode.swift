@@ -1422,9 +1422,9 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
         else if action == makeSelectorFromString("_accessibilitySpeakLanguageSelection:") || action == makeSelectorFromString("_accessibilityPauseSpeaking:") || action == makeSelectorFromString("_accessibilitySpeakSentence:") {
             return ASEditableTextNodeTargetForAction(target: nil)
         } else if action == makeSelectorFromString("_showTextStyleOptions:") {
-            if #available(iOS 16.0, *) {
-                return ASEditableTextNodeTargetForAction(target: nil)
-            } else {
+//            if #available(iOS 16.0, *) {
+//                return ASEditableTextNodeTargetForAction(target: nil)
+//            } else {
                 if case .general = self.inputMenu.state {
                     if let textInputNode = self.textInputNode, textInputNode.attributedText == nil || textInputNode.attributedText!.length == 0 || textInputNode.selectedRange.length == 0 {
                         return ASEditableTextNodeTargetForAction(target: nil)
@@ -1433,7 +1433,7 @@ public class AttachmentTextInputPanelNode: ASDisplayNode, TGCaptionPanelView, AS
                 } else {
                     return ASEditableTextNodeTargetForAction(target: nil)
                 }
-            }
+//            }
         } else if action == #selector(self.formatAttributesBold(_:)) || action == #selector(self.formatAttributesItalic(_:)) || action == #selector(self.formatAttributesMonospace(_:)) || action == #selector(self.formatAttributesLink(_:)) || action == #selector(self.formatAttributesStrikethrough(_:)) || action == #selector(self.formatAttributesUnderline(_:)) || action == #selector(self.formatAttributesSpoiler(_:)) {
             if case .format = self.inputMenu.state {
                 return ASEditableTextNodeTargetForAction(target: self)

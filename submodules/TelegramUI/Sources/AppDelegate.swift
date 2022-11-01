@@ -123,9 +123,9 @@ private class ApplicationStatusBarHost: StatusBarHost {
     }
     
     var keyboardWindow: UIWindow? {
-        if #available(iOS 16.0, *) {
-            return UIApplication.shared.internalGetKeyboard()
-        }
+//        if #available(iOS 16.0, *) {
+//            return UIApplication.shared.internalGetKeyboard()
+//        }
         
         for window in UIApplication.shared.windows {
             if isKeyboardWindow(window: window) {
