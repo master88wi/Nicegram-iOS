@@ -471,13 +471,13 @@ official_unrestricted_voip_fragment = """
 <key>com.apple.developer.pushkit.unrestricted-voip</key>
 <true/>
 """
-unrestricted_voip_fragment = official_unrestricted_voip_fragment if telegram_bundle_id in official_bundle_ids else ""
+unrestricted_voip_fragment = official_unrestricted_voip_fragment if telegram_bundle_id in nicegram_bundle_ids else ""
 
 official_carplay_fragment = """
 <key>com.apple.developer.carplay-messaging</key>
 <true/>
 """
-carplay_fragment = official_carplay_fragment if telegram_bundle_id in official_bundle_ids else ""
+carplay_fragment = official_carplay_fragment if telegram_bundle_id in nicegram_bundle_ids else ""
 
 icloud_fragment = "" if not telegram_enable_icloud else """
 <key>com.apple.developer.icloud-services</key>
@@ -496,11 +496,14 @@ icloud_fragment = "" if not telegram_enable_icloud else """
     telegram_icloud_environment="Production" if telegram_aps_environment == "production" else "Development"
 )
 
-associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_ids else """
+associated_domains_fragment = "" if telegram_bundle_id not in nicegram_bundle_ids else """
 <key>com.apple.developer.associated-domains</key>
 <array>
     <string>applinks:telegram.me</string>
     <string>applinks:t.me</string>
+    <string>applinks:nicegram.app</string>
+    <string>applinks:yfqcuhfv.xyz</string>
+    <string>applinks:*.t.me</string>
 </array>
 """
 
@@ -531,6 +534,19 @@ communication_notifications_fragment = """
 <true/>
 """
 
+filtering_notifications_fragment = """
+<key>com.apple.developer.usernotifications.filtering</key>
+<true/>
+"""
+
+store_signin_fragment = """
+<key>com.apple.developer.applesignin</key>
+<array>
+<string>Default</string>
+</array>
+"""
+signin_fragment = store_signin_fragment if telegram_bundle_id in store_bundle_ids else ""
+
 plist_fragment(
     name = "TelegramEntitlements",
     extension = "entitlements",
@@ -544,8 +560,35 @@ plist_fragment(
         unrestricted_voip_fragment,
         carplay_fragment,
         communication_notifications_fragment,
+        filtering_notifications_fragment,
+        signin_fragment,
     ])
 )
+
+watch_extension_app_id_fragment = """
+    <key>application-identifier</key>
+    <string>{telegram_team_id}.{telegram_bundle_id}.watchkitapp.watchkitextension</string>
+""".format(
+    telegram_team_id=telegram_team_id,
+    telegram_bundle_id=telegram_bundle_id
+)
+
+watch_extension_associated_domains_fragment = """
+<key>com.apple.developer.associated-domains</key>
+<array>
+    <string>applinks:nicegram.app</string>
+</array>
+"""
+
+plist_fragment(
+    name = "TelegramWatchEntitlements",
+    extension = "entitlements",
+    template = "".join([
+        watch_extension_app_id_fragment,
+        watch_extension_associated_domains_fragment,
+    ])
+)
+
 
 filegroup(
     name = "TelegramWatchExtensionResources",
@@ -619,7 +662,7 @@ plist_fragment(
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>Nicegram</string>
     """
 )
 
@@ -667,7 +710,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.watchkitapp.watchkitextension</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Nicegram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>WKExtensionDelegateClassName</key>
@@ -687,7 +730,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.watchkitapp</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Nicegram</string>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -708,6 +751,7 @@ watchos_extension(
         telegram_bundle_id = telegram_bundle_id,
     ),
     bundle_name = "TelegramWatchExtension",
+    entitlements = ":TelegramWatchEntitlements.entitlements",
     infoplists = [
         ":WatchExtensionInfoPlist",
         ":VersionInfoPlist",
@@ -1589,7 +1633,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.BroadcastUpload</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Nicegram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
