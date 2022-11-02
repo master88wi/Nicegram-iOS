@@ -132,7 +132,7 @@ private extension AssistantPresenter {
 private extension AssistantPresenter {
     func makeSupportItem(currentUser: EsimUser?) -> PersonalAssistantItem {
         var title = ngLocalized("Nicegram.Assistant.Support")
-        if let currentUser {
+        if let currentUser = currentUser {
             title += " (id: \(currentUser.id))"
         }
         return PersonalAssistantItem(
